@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Active-session list with focus, rename, restart, close, and source-context actions.
 - Loop controller tabs that invoke repository-owned `npm run omp:loop -- <alias>` safely.
 - Source context remapping into selected worktree; unrelated or missing targets are refused.
+- Per-worktree project-launcher detection, independent of lobby workspace settings.
 
 ## [1.1.0] - 2026-07-14
 

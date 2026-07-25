@@ -8,6 +8,7 @@ import {
   getExecutable,
   resolveWorkingDirectory,
 } from "../config";
+import { detectProjectLauncher } from "../projectLauncher";
 import {
   listGitWorktrees,
   sameDirectory,
@@ -133,10 +134,13 @@ export class SessionManager implements vscode.Disposable {
       }
       writerLease = leaseAttempt.lease;
     }
-    let executable = getExecutable();
-    const args = [...getDefaultArguments()];
+    const projectLauncher = detectProjectLauncher(directory.cwd);
+    let executable = projectLauncher?.executable ?? getExecutable();
+    const args = projectLauncher ? [] : [...getDefaultArguments()];
     if (resolvedKind === "readonly") {
-      args.push(`--tools=${READ_ONLY_TOOLS}`);
+      args.push(
+        projectLauncher?.readOnlyArgument ?? `--tools=${READ_ONLY_TOOLS}`,
+      );
     } else if (resolvedKind === "loop" && loopAlias) {
       executable = process.platform === "win32" ? "npm.cmd" : "npm";
       args.length = 0;

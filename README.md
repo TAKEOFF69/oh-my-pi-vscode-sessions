@@ -60,6 +60,10 @@ session worktree; missing or unrelated targets are refused.
 Windows installation at `%LOCALAPPDATA%\omp\omp.exe` is detected automatically,
 even when VS Code was opened before the installer changed `PATH`.
 
+Selected worktree wins over lobby workspace: when
+`scripts/omp/launch.mjs` exists, tab starts repository-owned launcher from that
+worktree. Read-only tab adds repository's `--read-only` profile.
+
 Manual override:
 
 ```json

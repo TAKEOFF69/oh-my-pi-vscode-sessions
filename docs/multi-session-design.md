@@ -43,10 +43,11 @@ out-of-worktree absolute paths to writing session.
 
 Resolution order:
 
-1. `ohMyPiSessions.executablePath`
-2. legacy `ohMyPi.executablePath`
-3. platform locations, including `%LOCALAPPDATA%\omp\omp.exe` on Windows
-4. `omp` from inherited `PATH`
+1. selected worktree's `scripts/omp/launch.mjs`
+2. `ohMyPiSessions.executablePath`
+3. legacy `ohMyPi.executablePath`
+4. platform locations, including `%LOCALAPPDATA%\omp\omp.exe` on Windows
+5. `omp` from inherited `PATH`
 
 An absolute executable is spawned directly; it is not routed through PowerShell.
 This avoids stale VS Code `PATH` state after installing OMP.
