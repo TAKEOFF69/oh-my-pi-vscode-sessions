@@ -152,12 +152,18 @@ export class SessionManager implements vscode.Disposable {
       executable,
       args,
     };
-    const session = new SessionPanel(
-      this.#extensionUri,
-      spec,
-      (disposed) => this.#remove(disposed),
-      (activated) => this.#activate(activated),
-    );
+    let session: SessionPanel;
+    try {
+      session = new SessionPanel(
+        this.#extensionUri,
+        spec,
+        (disposed) => this.#remove(disposed),
+        (activated) => this.#activate(activated),
+      );
+    } catch (error) {
+      await writerLease?.release();
+      throw error;
+    }
     if (writerLease) {
       this.#writerLeases.set(session.id, writerLease);
     }
