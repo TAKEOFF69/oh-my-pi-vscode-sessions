@@ -5,6 +5,19 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-26
+
+### Added
+
+- Forked as **Oh My Pi Sessions**.
+- Concurrent native VS Code editor tabs, each owning one PTY and OMP process.
+- Existing-Git-worktree picker with cwd and branch identity per session.
+- Duplicate write-owner warning with read-only, override, and focus choices.
+- Read-only brainstorming sessions without Bash or mutation tools.
+- Windows OMP executable auto-detection for stale VS Code PATH state.
+- Active-session list with focus, rename, restart, close, and source-context actions.
+- Loop controller tabs that invoke repository-owned `npm run omp:loop -- <alias>` safely.
+
 ## [1.1.0] - 2026-07-14
 
 ### Added

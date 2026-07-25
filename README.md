@@ -1,101 +1,111 @@
-# Oh My Pi for VS Code
+# Oh My Pi Sessions
 
-Embedded terminal panel for [Oh My Pi](https://github.com/can1357/oh-my-pi). Runs `omp` in a dedicated sidebar terminal powered by xterm.js and a real pseudo-terminal (PTY).
+Run multiple independent [Oh My Pi](https://github.com/can1357/oh-my-pi)
+sessions in one VS Code window. Each OMP process opens as a native editor tab and
+has its own working directory, terminal state, and lifecycle.
 
-This extension does **not** use VS Code's built-in terminal panel. It renders its own terminal inside a webview.
+## Why this fork exists
 
-## Requirements
+The upstream
+[Oh My Pi for VS Code](https://github.com/shohihul/oh-my-pi-vscode) extension
+provides one excellent embedded sidebar terminal. This fork keeps its xterm/PTTY
+foundation and adds a session manager for parallel, worktree-heavy development.
 
-- VS Code 1.85+ (desktop — macOS, Linux, or Windows)
-- `omp` installed and available, or configured via settings
-- Not supported in VS Code for the Web
+The UX direction also draws from
+[OMP Desktop](https://github.com/MTEnt/omp-desktop) and
+[Zetaphor's Pi VS Code extension](https://github.com/Zetaphor/pi-vscode-extension):
+the interface orchestrates sessions while OMP remains the agent runtime.
 
-## Usage
+## Workflow
 
-### Opening the terminal
+1. Open **OMP Sessions** from the activity bar.
+2. Click **+** for work, **play** for a Loop controller, or lightbulb for read-only.
+3. Pick current workspace or any existing Git worktree.
+4. Work in the new `π …` editor tab.
+5. Repeat. Tabs run concurrently and may be moved into VS Code split groups.
 
-Any of these opens the panel:
+One VS Code window can therefore contain:
 
-- Click the **Oh My Pi** icon in the activity bar
-- Run **Oh My Pi for VS Code: Open Terminal** from the Command Palette
-- Press **Cmd+Shift+Alt+I** (macOS) / **Ctrl+Shift+Alt+I** (Windows/Linux)
+- a Loop controller in its clean controller worktree;
+- several implementation sessions in separate worker worktrees;
+- a read-only architecture or brainstorming session;
+- ordinary source editors alongside all of them.
 
-`omp` launches as soon as the panel opens. To restart it manually, click the toolbar button or run **Restart Terminal** from the Command Palette. If `omp` exits on its own, just press any key to relaunch it.
+For a repository exposing `npm run omp:loop -- <alias>`, use **New Loop
+Controller**. Pick clean controller worktree and enter alias. Tab launches repository's
+locked Loop profile directly; second writer cannot claim same controller directory.
 
-### Inside the terminal
+The rule is **one writing session per worktree**, not one VS Code window per
+worktree. If a second writing session selects an occupied directory, the extension
+offers read-only mode, explicit override, or focus of the existing owner.
 
-| Action | Shortcut |
-|--------|----------|
-| Paste | Cmd/Ctrl+V or middle-click |
-| Find | Cmd/Ctrl+F (or the search toolbar button) |
-| New line in the `omp` composer | Shift+Enter |
+## Read-only sessions
 
-The find bar supports case-sensitive, whole-word, and regex matching with a live result counter. Press **Enter** / **Shift+Enter** to jump to the next / previous match, and **Esc** to close.
+Read-only tabs start OMP with a restricted tool list:
 
-**Clickable links** — URLs open in your external browser. File paths — with an optional `:line` or `:line:col` suffix — open directly in the editor.
+```text
+read, grep, glob, lsp, inspect_image, browser, web_search, ask, todo
+```
 
-### Sending code from the editor
+No `bash`, `edit`, `write`, or `task` tool is enabled. This makes sharing a source
+directory suitable for ideation and review without creating another Git writer.
 
-Available from the editor's right-click menu or the Command Palette:
+## OMP executable
 
-| Command | What it sends |
-|---------|---------------|
-| **Send Line(s) to omp** | A workspace-relative line reference like `path/to/file.ts:20` (single line) or `path/to/file.ts:20-25` (selection range), then Enter. |
-| **Send Selection to omp** | The exact selected text — or the active line if nothing is selected. |
-| **Send File Path to omp** | The workspace-relative file path, then Enter. |
+Windows installation at `%LOCALAPPDATA%\omp\omp.exe` is detected automatically,
+even when VS Code was opened before the installer changed `PATH`.
 
-## Settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `ohMyPi.executablePath` | `omp` | Command to run. Use a full path if `omp` is not on VS Code's PATH. Shell arguments are supported (e.g. `omp --flag`). |
-| `ohMyPi.autoStart` | `false` | Open the panel automatically when VS Code starts. |
-| `ohMyPi.workingDirectory` | workspace / home | Working directory passed to `omp`. Invalid paths fall back to home. |
-
-Font size and family follow `terminal.integrated.fontSize` and `terminal.integrated.fontFamily`.
-
-Terminal colors (background, foreground, cursor, selection, and all 16 ANSI colors) are read from your active VS Code theme via `--vscode-terminal-*` CSS variables — they update automatically when you switch themes.
-
-Changing `executablePath` or `workingDirectory` restarts the terminal automatically.
-
-## Troubleshooting
-
-**`omp` not found**
-
-Set the full path in settings:
+Manual override:
 
 ```json
 {
-  "ohMyPi.executablePath": "/Users/you/.bun/bin/omp"
+  "ohMyPiSessions.executablePath": "C:\\path\\to\\omp.exe",
+  "ohMyPiSessions.defaultArguments": ["--advisor", "--thinking=max"]
 }
 ```
 
-On macOS/Linux, `omp` runs via a login shell (`$SHELL -l -c`) so your shell profile PATH is loaded. On Windows it launches through PowerShell 7 (`pwsh`), falling back to Windows PowerShell, then `cmd.exe`.
+The original extension's `ohMyPi.executablePath` setting is also read as a migration
+fallback.
 
-**Blank panel**
+## Commands
 
-Reinstall the extension or run `npm install && npm run build` when developing. xterm assets ship inside the VSIX under `node_modules/@xterm/`.
+- `OMP Sessions: New Work Session`
+- `OMP Sessions: New Read-Only Session`
+- `OMP Sessions: New Loop Controller`
+- `OMP Sessions: Open Active Session`
+- `OMP Sessions: Restart Session`
+- `OMP Sessions: Rename Session`
+- `OMP Sessions: Close Session`
+- `OMP Sessions: Send Line Reference to OMP`
+- `OMP Sessions: Send Selection to OMP`
+- `OMP Sessions: Send File Path to OMP`
 
-## Development
+Default shortcut for a new work session:
+
+- Windows/Linux: `Ctrl+Shift+Alt+I`
+- macOS: `Cmd+Shift+Alt+I`
+
+## Build and install
 
 ```bash
 npm install
-npm run build      # production build
-npm run watch      # watch mode
-npm run typecheck  # TypeScript check
-npm test           # unit tests
-npm run package    # create .vsix for the current platform
-npm run package:all # create one .vsix per platform (macOS/Linux/Windows × x64/arm64)
+npm run typecheck
+npm test
+npm run build
+npm run package
+code --install-extension oh-my-pi-vscode-sessions-1.2.0.vsix
 ```
 
-Press **F5** in VS Code to launch an Extension Development Host.
+## Current boundary
 
-## Architecture
+Tabs are native VS Code webview panels containing OMP's real TUI. Processes live
+concurrently while the window is open. Closing VS Code terminates the PTYs; OMP's
+saved sessions remain available through its normal `--continue` and `--resume`
+commands.
 
-```
-Activity Bar → Webview (xterm.js + WebGL) ↔ Extension Host ↔ @lydell/node-pty → omp
-```
+Rich RPC tool cards, checkpoints, and inline diff widgets are possible later, but
+are intentionally outside this first reliable multi-session layer.
 
 ## License
 
-MIT
+MIT. Original extension copyright and license remain in [LICENSE](LICENSE).

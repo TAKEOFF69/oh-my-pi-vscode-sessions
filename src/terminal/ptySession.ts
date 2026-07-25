@@ -4,6 +4,7 @@ import { buildPtyEnv, buildSpawnCommand } from "../spawn";
 
 export type PtySessionOptions = {
   executable: string;
+  args?: readonly string[];
   cwd: string;
   cols: number;
   rows: number;
@@ -19,7 +20,7 @@ export class PtySession {
   spawn(opts: PtySessionOptions): void {
     this.dispose();
 
-    const { file, args } = buildSpawnCommand(opts.executable);
+    const { file, args } = buildSpawnCommand(opts.executable, opts.args);
 
     this.#proc = pty.spawn(file, args, {
       name: "xterm-256color",

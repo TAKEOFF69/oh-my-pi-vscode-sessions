@@ -32,6 +32,15 @@ describe("buildSpawnCommand", () => {
     assert.ok(result.file.length > 0);
     assert.ok(result.args.length > 0);
   });
+
+  it("passes arguments directly to an absolute executable", () => {
+    const result = buildSpawnCommand(process.execPath, [
+      "--thinking=max",
+      "--advisor",
+    ]);
+    assert.equal(result.file, process.execPath);
+    assert.deepEqual(result.args, ["--thinking=max", "--advisor"]);
+  });
 });
 
 describe("buildPtyEnv", () => {

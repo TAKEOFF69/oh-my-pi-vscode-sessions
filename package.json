@@ -1,17 +1,17 @@
 {
-  "name": "oh-my-pi-vscode",
-  "displayName": "Oh My Pi for VS Code",
-  "description": "Oh My Pi for VS Code — embedded terminal panel that runs omp in a dedicated sidebar (desktop only).",
-  "version": "1.1.0",
-  "publisher": "shohihulmaksud",
+  "name": "oh-my-pi-vscode-sessions",
+  "displayName": "Oh My Pi Sessions",
+  "description": "Run concurrent Oh My Pi sessions in native VS Code editor tabs, each bound to its own folder or Git worktree.",
+  "version": "1.2.0",
+  "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shohihul/oh-my-pi-vscode"
+    "url": "https://github.com/TAKEOFF69/oh-my-pi-vscode-sessions"
   },
   "extensionKind": [
-    "ui"
+    "workspace"
   ],
   "engines": {
     "vscode": "^1.85.0"
@@ -26,160 +26,232 @@
     "oh-my-pi",
     "pty",
     "xterm",
-    "sidebar",
+    "tabs",
+    "worktree",
+    "sessions",
     "ai"
   ],
   "activationEvents": [
-    "onView:ohMyPi.terminal",
-    "onCommand:ohMyPi.open",
-    "onCommand:ohMyPi.restart",
-    "onCommand:ohMyPi.sendLines",
-    "onCommand:ohMyPi.sendSelection",
-    "onCommand:ohMyPi.sendFile",
+    "onView:ohMyPiSessions.sessions",
+    "onCommand:ohMyPiSessions.open",
+    "onCommand:ohMyPiSessions.newSession",
+    "onCommand:ohMyPiSessions.newReadOnlySession",
+    "onCommand:ohMyPiSessions.newLoopSession",
+    "onCommand:ohMyPiSessions.sendLines",
+    "onCommand:ohMyPiSessions.sendSelection",
+    "onCommand:ohMyPiSessions.sendFile",
     "onStartupFinished"
   ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "oh-my-pi",
-          "title": "Oh My Pi",
+          "id": "oh-my-pi-sessions",
+          "title": "OMP Sessions",
           "icon": "media/activity-icon.svg"
         }
       ]
     },
     "views": {
-      "oh-my-pi": [
+      "oh-my-pi-sessions": [
         {
-          "type": "webview",
-          "id": "ohMyPi.terminal",
-          "name": "Terminal",
+          "id": "ohMyPiSessions.sessions",
+          "name": "Sessions",
           "icon": "media/activity-icon.svg",
-          "contextualTitle": "Oh My Pi for VS Code"
+          "contextualTitle": "Oh My Pi Sessions"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "ohMyPiSessions.sessions",
+        "contents": "Run multiple independent OMP processes as native editor tabs.\n[New work session](command:ohMyPiSessions.newSession)\n[New Loop controller](command:ohMyPiSessions.newLoopSession)\n[New read-only session](command:ohMyPiSessions.newReadOnlySession)",
+        "when": "!ohMyPiSessions.hasSessions"
+      }
+    ],
     "commands": [
       {
-        "command": "ohMyPi.open",
-        "title": "Oh My Pi for VS Code: Open Terminal",
-        "category": "Oh My Pi for VS Code",
+        "command": "ohMyPiSessions.open",
+        "title": "Open Active Session",
+        "category": "OMP Sessions",
         "icon": "$(terminal)"
       },
       {
-        "command": "ohMyPi.restart",
-        "title": "Oh My Pi for VS Code: Restart Terminal",
-        "category": "Oh My Pi for VS Code",
+        "command": "ohMyPiSessions.newSession",
+        "title": "New Work Session",
+        "category": "OMP Sessions",
+        "icon": "$(add)"
+      },
+      {
+        "command": "ohMyPiSessions.newReadOnlySession",
+        "title": "New Read-Only Session",
+        "category": "OMP Sessions",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "ohMyPiSessions.newLoopSession",
+        "title": "New Loop Controller",
+        "category": "OMP Sessions",
+        "icon": "$(play-circle)"
+      },
+      {
+        "command": "ohMyPiSessions.focusSession",
+        "title": "Focus Session",
+        "category": "OMP Sessions",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "ohMyPiSessions.restartSession",
+        "title": "Restart Session",
+        "category": "OMP Sessions",
         "icon": "$(debug-restart)"
       },
       {
-        "command": "ohMyPi.search",
-        "title": "Oh My Pi for VS Code: Find in Terminal",
-        "category": "Oh My Pi for VS Code",
+        "command": "ohMyPiSessions.searchSession",
+        "title": "Find in Session",
+        "category": "OMP Sessions",
         "icon": "$(search)"
       },
       {
-        "command": "ohMyPi.sendLines",
-        "title": "OMP: Send Line(s) to omp",
-        "category": "Oh My Pi for VS Code",
+        "command": "ohMyPiSessions.renameSession",
+        "title": "Rename Session",
+        "category": "OMP Sessions",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "ohMyPiSessions.closeSession",
+        "title": "Close Session",
+        "category": "OMP Sessions",
+        "icon": "$(close)"
+      },
+      {
+        "command": "ohMyPiSessions.closeAll",
+        "title": "Close All Sessions",
+        "category": "OMP Sessions",
+        "icon": "$(close-all)"
+      },
+      {
+        "command": "ohMyPiSessions.sendLines",
+        "title": "Send Line Reference to OMP",
+        "category": "OMP Sessions",
         "icon": "$(code)"
       },
       {
-        "command": "ohMyPi.sendSelection",
-        "title": "OMP: Send Selection to omp",
-        "category": "Oh My Pi for VS Code",
+        "command": "ohMyPiSessions.sendSelection",
+        "title": "Send Selection to OMP",
+        "category": "OMP Sessions",
         "icon": "$(terminal)"
       },
       {
-        "command": "ohMyPi.sendFile",
-        "title": "OMP: Send File Path to omp",
-        "category": "Oh My Pi for VS Code",
+        "command": "ohMyPiSessions.sendFile",
+        "title": "Send File Path to OMP",
+        "category": "OMP Sessions",
         "icon": "$(file)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "ohMyPi.search",
-          "when": "view == ohMyPi.terminal",
-          "group": "navigation"
+          "command": "ohMyPiSessions.newSession",
+          "when": "view == ohMyPiSessions.sessions",
+          "group": "navigation@1"
         },
         {
-          "command": "ohMyPi.restart",
-          "when": "view == ohMyPi.terminal",
-          "group": "navigation"
+          "command": "ohMyPiSessions.newReadOnlySession",
+          "when": "view == ohMyPiSessions.sessions",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ohMyPiSessions.newLoopSession",
+          "when": "view == ohMyPiSessions.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ohMyPiSessions.closeAll",
+          "when": "view == ohMyPiSessions.sessions && ohMyPiSessions.hasSessions",
+          "group": "navigation@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ohMyPiSessions.focusSession",
+          "when": "view == ohMyPiSessions.sessions && viewItem == ohMyPiSession",
+          "group": "inline@1"
+        },
+        {
+          "command": "ohMyPiSessions.restartSession",
+          "when": "view == ohMyPiSessions.sessions && viewItem == ohMyPiSession",
+          "group": "inline@2"
+        },
+        {
+          "command": "ohMyPiSessions.renameSession",
+          "when": "view == ohMyPiSessions.sessions && viewItem == ohMyPiSession",
+          "group": "session@1"
+        },
+        {
+          "command": "ohMyPiSessions.closeSession",
+          "when": "view == ohMyPiSessions.sessions && viewItem == ohMyPiSession",
+          "group": "session@2"
         }
       ],
       "editor/context": [
         {
-          "command": "ohMyPi.sendLines",
+          "command": "ohMyPiSessions.sendLines",
           "when": "editorTextFocus",
           "group": "9_omp@1"
         },
         {
-          "command": "ohMyPi.sendSelection",
+          "command": "ohMyPiSessions.sendSelection",
           "when": "editorTextFocus",
           "group": "9_omp@2"
         },
         {
-          "command": "ohMyPi.sendFile",
+          "command": "ohMyPiSessions.sendFile",
           "when": "resourceScheme == file",
           "group": "9_omp@3"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "ohMyPi.open"
-        },
-        {
-          "command": "ohMyPi.restart"
-        },
-        {
-          "command": "ohMyPi.search"
-        },
-        {
-          "command": "ohMyPi.sendLines"
-        },
-        {
-          "command": "ohMyPi.sendSelection"
-        },
-        {
-          "command": "ohMyPi.sendFile",
-          "when": "resourceScheme == file"
         }
       ]
     },
     "configuration": {
-      "title": "Oh My Pi for VS Code",
+      "title": "Oh My Pi Sessions",
       "properties": {
-        "ohMyPi.executablePath": {
+        "ohMyPiSessions.executablePath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Command to run in the embedded terminal. Defaults to `omp`. Use a full path if `omp` is not on VS Code's PATH (e.g. `~/.bun/bin/omp`). Shell arguments are supported (e.g. `omp --flag`)."
+          "scope": "resource",
+          "markdownDescription": "OMP executable or command. Windows auto-detects `%LOCALAPPDATA%\\omp\\omp.exe`; otherwise defaults to `omp`. Existing `ohMyPi.executablePath` is honored as a migration fallback."
         },
-        "ohMyPi.autoStart": {
+        "ohMyPiSessions.defaultArguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Arguments added to every OMP session, for example `--advisor` or `--thinking=max`."
+        },
+        "ohMyPiSessions.autoStart": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically open the Oh My Pi for VS Code panel when VS Code starts."
+          "description": "Prompt for a session directory when VS Code starts."
         },
-        "ohMyPi.workingDirectory": {
+        "ohMyPiSessions.workingDirectory": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Working directory for omp (defaults to the first workspace folder, or your home directory)."
+          "markdownDescription": "Fallback session directory when no workspace is open."
         }
       }
     },
     "keybindings": [
       {
-        "command": "ohMyPi.open",
+        "command": "ohMyPiSessions.newSession",
         "key": "ctrl+shift+alt+i",
         "mac": "cmd+shift+alt+i"
       },
       {
-        "command": "ohMyPi.search",
+        "command": "ohMyPiSessions.searchSession",
         "key": "ctrl+f",
         "mac": "cmd+f",
-        "when": "view == ohMyPi.terminal"
+        "when": "activeWebviewPanelId == ohMyPiSessions.session"
       }
     ]
   },
