@@ -1,9 +1,8 @@
-import * as nodePath from "node:path";
-
 import * as vscode from "vscode";
 
 import { SessionManager } from "./sessions/SessionManager";
 import type { SessionPanel } from "./sessions/SessionPanel";
+import { resolveSessionPath } from "./worktrees";
 
 export function activate(context: vscode.ExtensionContext): void {
   const manager = new SessionManager(context.extensionUri);
@@ -90,7 +89,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const startNumber = start + 1;
       const endNumber = end + 1;
-      const filePath = pathForSession(document.uri.fsPath, target.cwd);
+      const filePath = await pathForSession(
+        document.uri.fsPath,
+        target.cwd,
+      );
+      if (!filePath) {
+        return;
+      }
       const reference =
         startNumber === endNumber
           ? `${filePath}:${startNumber}`
@@ -106,7 +111,13 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!target) {
         return;
       }
-      target.send(`${pathForSession(editor.document.uri.fsPath, target.cwd)}\n`);
+      const filePath = await pathForSession(
+        editor.document.uri.fsPath,
+        target.cwd,
+      );
+      if (filePath) {
+        target.send(`${filePath}\n`);
+      }
     }),
     manager,
   );
@@ -122,14 +133,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
-function pathForSession(filePath: string, cwd: string): string {
-  const relative = nodePath.relative(cwd, filePath);
-  if (
-    !relative ||
-    relative.startsWith(`..${nodePath.sep}`) ||
-    nodePath.isAbsolute(relative)
-  ) {
-    return filePath;
+async function pathForSession(
+  filePath: string,
+  cwd: string,
+): Promise<string | undefined> {
+  const resolved = await resolveSessionPath(filePath, cwd);
+  if (!resolved) {
+    await vscode.window.showWarningMessage(
+      "File is outside selected OMP worktree or has no matching file there. Nothing was sent.",
+    );
   }
-  return relative;
+  return resolved;
 }

@@ -25,20 +25,30 @@ function buildWindowsSpawnCommand(
     "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
     "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
   ];
-  const command = appendShellArguments(executable, extraArgs, quotePowerShell);
+  const powershellCommand = appendShellArguments(
+    executable,
+    extraArgs,
+    quotePowerShell,
+  );
 
   for (const file of absoluteCandidates) {
     if (fs.existsSync(file)) {
-      return { file, args: ["-NoLogo", "-Command", command] };
+      return { file, args: ["-NoLogo", "-Command", powershellCommand] };
     }
   }
 
   const comspec = process.env.COMSPEC;
   if (comspec?.toLowerCase().endsWith("cmd.exe")) {
-    return { file: comspec, args: ["/d", "/c", command] };
+    return {
+      file: comspec,
+      args: ["/d", "/v:off", "/s", "/c", buildCmdCommand(executable, extraArgs)],
+    };
   }
 
-  return { file: "powershell.exe", args: ["-NoLogo", "-Command", command] };
+  return {
+    file: "powershell.exe",
+    args: ["-NoLogo", "-Command", powershellCommand],
+  };
 }
 
 export function buildPtyEnv(): Record<string, string> {
@@ -79,6 +89,17 @@ function appendShellArguments(
 
 function quotePowerShell(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+export function buildCmdCommand(
+  executable: string,
+  args: readonly string[],
+): string {
+  return appendShellArguments(executable, args, quoteCmd);
+}
+
+function quoteCmd(value: string): string {
+  return `"${value.replace(/%/g, "%%").replace(/"/g, '""')}"`;
 }
 
 function quotePosix(value: string): string {

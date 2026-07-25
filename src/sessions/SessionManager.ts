@@ -14,6 +14,10 @@ import {
   type GitWorktree,
 } from "../worktrees";
 import {
+  acquireWriterLease,
+  type WriterLease,
+} from "../worktreeLease";
+import {
   SessionPanel,
   type SessionKind,
   type SessionSpec,
@@ -34,6 +38,7 @@ export class SessionManager implements vscode.Disposable {
   readonly #extensionUri: vscode.Uri;
   #sessions: SessionPanel[] = [];
   #active: SessionPanel | undefined;
+  #writerLeases = new Map<string, WriterLease>();
 
   constructor(extensionUri: vscode.Uri) {
     this.#extensionUri = extensionUri;
@@ -77,7 +82,6 @@ export class SessionManager implements vscode.Disposable {
           `"${conflicting.label}" already owns write access to this directory.`,
           { modal: true },
           "Open read-only",
-          "Open anyway",
           "Focus existing",
         );
         if (choice === "Focus existing") {
@@ -86,7 +90,7 @@ export class SessionManager implements vscode.Disposable {
         }
         if (choice === "Open read-only") {
           resolvedKind = "readonly";
-        } else if (choice !== "Open anyway") {
+        } else {
           return undefined;
         }
       }
@@ -114,6 +118,21 @@ export class SessionManager implements vscode.Disposable {
       nodePath.basename(directory.cwd) ??
       "OMP session";
     const label = this.#uniqueLabel(baseLabel);
+    let writerLease: WriterLease | undefined;
+    if (resolvedKind !== "readonly") {
+      const leaseAttempt = await acquireWriterLease(directory.cwd, label);
+      if (!leaseAttempt.acquired) {
+        const owner = leaseAttempt.owner;
+        await vscode.window.showWarningMessage(
+          owner
+            ? `Worktree already has writing session "${owner.label}" (PID ${owner.pid}). Open read-only or close existing owner first.`
+            : "Could not acquire cross-window writer lease for this Git worktree. Open read-only instead.",
+          { modal: true },
+        );
+        return undefined;
+      }
+      writerLease = leaseAttempt.lease;
+    }
     let executable = getExecutable();
     const args = [...getDefaultArguments()];
     if (resolvedKind === "readonly") {
@@ -139,6 +158,9 @@ export class SessionManager implements vscode.Disposable {
       (disposed) => this.#remove(disposed),
       (activated) => this.#activate(activated),
     );
+    if (writerLease) {
+      this.#writerLeases.set(session.id, writerLease);
+    }
     this.#sessions.push(session);
     this.#active = session;
     this.#refresh();
@@ -322,6 +344,11 @@ export class SessionManager implements vscode.Disposable {
   }
 
   #remove(session: SessionPanel): void {
+    const lease = this.#writerLeases.get(session.id);
+    this.#writerLeases.delete(session.id);
+    if (lease) {
+      void lease.release();
+    }
     this.#sessions = this.#sessions.filter((candidate) => candidate !== session);
     if (this.#active === session) {
       this.#active = this.#sessions.find((candidate) => candidate.active);

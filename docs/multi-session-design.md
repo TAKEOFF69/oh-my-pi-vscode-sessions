@@ -9,9 +9,9 @@ authentication, model discovery, extensions, skills, and session storage.
 
 - One VS Code window may run many OMP sessions concurrently.
 - Every editor tab owns one PTY, one OMP process, and one explicit working directory.
-- Writing sessions should use distinct Git worktrees.
-- Multiple sessions may share a directory only after an explicit warning. Read-only
-  sessions remove `bash`, `edit`, `write`, and `task` from OMP's enabled tool list.
+- Writing sessions use distinct Git worktrees, enforced by atomic cross-process lease.
+- Multiple sessions may share a directory only in read-only mode. Read-only sessions
+  remove `bash`, `edit`, `write`, and `task` from OMP's enabled tool list.
 - Loop controller session launches repository-owned `npm run omp:loop -- <alias>` profile
   and refuses an already-owned controller directory.
 - Closing a tab terminates only that tab's OMP process.
@@ -35,6 +35,10 @@ consistent with other editor surfaces.
 selection is explicit and shown in the session tree tooltip. Relative file links are
 resolved against the owning session's directory before workspace fallbacks.
 
+Source-context commands compare shared Git identity, map repository-relative path
+into target worktree, and require mapped file to exist. They never send
+out-of-worktree absolute paths to writing session.
+
 ## Binary resolution
 
 Resolution order:
@@ -54,9 +58,10 @@ Included:
 - concurrent native editor tabs;
 - active-session sidebar;
 - existing-worktree picker;
-- duplicate write-owner warning;
+- atomic cross-process writer leases with stale-PID recovery;
 - read-only brainstorming profile;
 - repository-owned Loop controller profile;
+- same-repository source-path remapping;
 - restart, search, rename, close, and source-context commands;
 - automatic local OMP binary detection.
 
@@ -73,7 +78,7 @@ mode rather than reimplementing agent behavior.
 ## Acceptance checks
 
 - TypeScript strict check passes.
-- Unit tests cover PTY spawning and Git worktree parsing.
+- Unit tests cover PTY spawning, Git worktree parsing, path remapping, and leases.
 - Production extension bundle builds.
 - VSIX packages without missing runtime assets.
 - Installed extension opens two simultaneous tabs bound to different directories.

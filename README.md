@@ -36,8 +36,9 @@ Controller**. Pick clean controller worktree and enter alias. Tab launches repos
 locked Loop profile directly; second writer cannot claim same controller directory.
 
 The rule is **one writing session per worktree**, not one VS Code window per
-worktree. If a second writing session selects an occupied directory, the extension
-offers read-only mode, explicit override, or focus of the existing owner.
+worktree. Atomic leases under shared Git directory enforce this across tabs,
+windows, and extension-host restarts; stale process owners are recovered. If
+directory is occupied, use read-only mode or focus/close existing owner.
 
 ## Read-only sessions
 
@@ -49,6 +50,10 @@ read, grep, glob, lsp, inspect_image, browser, web_search, ask, todo
 
 No `bash`, `edit`, `write`, or `task` tool is enabled. This makes sharing a source
 directory suitable for ideation and review without creating another Git writer.
+
+Editor context commands never send absolute path from another checkout.
+Same-repository files are remapped by repository-relative path into selected
+session worktree; missing or unrelated targets are refused.
 
 ## OMP executable
 

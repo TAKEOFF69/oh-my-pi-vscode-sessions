@@ -12,11 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Forked as **Oh My Pi Sessions**.
 - Concurrent native VS Code editor tabs, each owning one PTY and OMP process.
 - Existing-Git-worktree picker with cwd and branch identity per session.
-- Duplicate write-owner warning with read-only, override, and focus choices.
+- Atomic cross-window write-owner leases with read-only/focus recovery.
 - Read-only brainstorming sessions without Bash or mutation tools.
 - Windows OMP executable auto-detection for stale VS Code PATH state.
 - Active-session list with focus, rename, restart, close, and source-context actions.
 - Loop controller tabs that invoke repository-owned `npm run omp:loop -- <alias>` safely.
+- Source context remapping into selected worktree; unrelated or missing targets are refused.
 
 ## [1.1.0] - 2026-07-14
 
