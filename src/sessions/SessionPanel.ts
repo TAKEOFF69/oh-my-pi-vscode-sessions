@@ -137,6 +137,7 @@ export class SessionPanel implements vscode.Disposable {
       return;
     }
     this.#spec = { ...this.#spec, label: trimmed };
+    this.#host.setLabel(trimmed);
     this.panel.title = this.#title();
   }
 

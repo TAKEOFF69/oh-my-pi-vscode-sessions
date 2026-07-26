@@ -32,7 +32,7 @@ export class TerminalSessionHost implements vscode.Disposable {
   readonly #cwd: string;
   readonly #executable: string;
   readonly #args: readonly string[];
-  readonly #label: string;
+  #label: string;
   readonly #logger: SessionLogger;
   readonly #onStatusChange: (status: SessionStatus) => void;
   readonly #pty = new PtySession();
@@ -111,6 +111,10 @@ export class TerminalSessionHost implements vscode.Disposable {
 
   focus(): void {
     void this.#webview.postMessage({ type: "focus" });
+  }
+
+  setLabel(label: string): void {
+    this.#label = label;
   }
 
   syncAppearance(): void {
@@ -253,6 +257,10 @@ export class TerminalSessionHost implements vscode.Disposable {
     );
     this.#webview.html = result.html;
     if (!result.ok) {
+      this.#setStatus("failed");
+      this.#logger.error(
+        `Terminal assets unavailable for "${this.#label}": ${result.error}`,
+      );
       void vscode.window.showErrorMessage(`OMP Sessions: ${result.error}`);
     }
   }
