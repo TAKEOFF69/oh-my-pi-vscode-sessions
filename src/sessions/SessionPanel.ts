@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
 
+import type { SessionLogger } from "../logging";
 import { TerminalSessionHost } from "../terminal/TerminalSessionHost";
 
 export type SessionKind = "work" | "readonly" | "loop";
+export type SessionStatus = "starting" | "running" | "finished" | "failed";
 
 export type SessionSpec = {
   id: string;
@@ -21,7 +23,9 @@ export class SessionPanel implements vscode.Disposable {
   readonly #host: TerminalSessionHost;
   readonly #onDisposed: (session: SessionPanel) => void;
   readonly #onActivated: (session: SessionPanel) => void;
+  readonly #onChanged: (session: SessionPanel) => void;
   #disposed = false;
+  #status: SessionStatus = "starting";
   #spec: SessionSpec;
   #disposables: vscode.Disposable[] = [];
 
@@ -30,10 +34,13 @@ export class SessionPanel implements vscode.Disposable {
     spec: SessionSpec,
     onDisposed: (session: SessionPanel) => void,
     onActivated: (session: SessionPanel) => void,
+    onChanged: (session: SessionPanel) => void,
+    logger: SessionLogger,
   ) {
     this.#spec = spec;
     this.#onDisposed = onDisposed;
     this.#onActivated = onActivated;
+    this.#onChanged = onChanged;
     this.panel = vscode.window.createWebviewPanel(
       SessionPanel.viewType,
       this.#title(),
@@ -55,6 +62,12 @@ export class SessionPanel implements vscode.Disposable {
       cwd: spec.cwd,
       executable: spec.executable,
       args: spec.args,
+      logger,
+      label: spec.label,
+      onStatusChange: (status) => {
+        this.#status = status;
+        this.#onChanged(this);
+      },
       onDidChangeVisibility: (listener) =>
         this.panel.onDidChangeViewState(listener),
       isVisible: () => this.panel.visible,
@@ -95,6 +108,10 @@ export class SessionPanel implements vscode.Disposable {
 
   get active(): boolean {
     return this.panel.active;
+  }
+
+  get status(): SessionStatus {
+    return this.#status;
   }
 
   reveal(): void {

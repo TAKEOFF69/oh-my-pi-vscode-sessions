@@ -85,6 +85,7 @@ fallback.
 - `OMP Sessions: Restart Session`
 - `OMP Sessions: Rename Session`
 - `OMP Sessions: Close Session`
+- `OMP Sessions: Show Logs`
 - `OMP Sessions: Send Line Reference to OMP`
 - `OMP Sessions: Send Selection to OMP`
 - `OMP Sessions: Send File Path to OMP`
@@ -102,7 +103,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-1.2.0.vsix
+code --install-extension oh-my-pi-vscode-sessions-1.2.1.vsix
 ```
 
 ## Current boundary

@@ -8,6 +8,7 @@ import {
   getExecutable,
   resolveWorkingDirectory,
 } from "../config";
+import type { SessionLogger } from "../logging";
 import { detectProjectLauncher } from "../projectLauncher";
 import {
   listGitWorktrees,
@@ -37,12 +38,14 @@ type DirectoryChoice = vscode.QuickPickItem & {
 export class SessionManager implements vscode.Disposable {
   readonly tree = new SessionTreeProvider();
   readonly #extensionUri: vscode.Uri;
+  readonly #logger: SessionLogger;
   #sessions: SessionPanel[] = [];
   #active: SessionPanel | undefined;
   #writerLeases = new Map<string, WriterLease>();
 
-  constructor(extensionUri: vscode.Uri) {
+  constructor(extensionUri: vscode.Uri, logger: SessionLogger) {
     this.#extensionUri = extensionUri;
+    this.#logger = logger;
   }
 
   get sessions(): readonly SessionPanel[] {
@@ -54,10 +57,15 @@ export class SessionManager implements vscode.Disposable {
   }
 
   async newSession(kind: SessionKind = "work"): Promise<SessionPanel | undefined> {
+    this.#logger.info(`New ${kind} session requested`);
     const directory = await this.#pickDirectory();
     if (!directory) {
+      this.#logger.info(`New ${kind} session cancelled before directory selection`);
       return undefined;
     }
+    this.#logger.info(
+      `Selected ${kind} session directory ${directory.cwd}${directory.branch ? ` (${directory.branch})` : ""}`,
+    );
 
     let resolvedKind = kind;
     if (kind !== "readonly") {
@@ -156,6 +164,9 @@ export class SessionManager implements vscode.Disposable {
       executable,
       args,
     };
+    this.#logger.info(
+      `Starting "${label}" as ${resolvedKind}; executable=${executable}; projectLauncher=${projectLauncher ? "yes" : "no"}`,
+    );
     let session: SessionPanel;
     try {
       session = new SessionPanel(
@@ -163,8 +174,11 @@ export class SessionManager implements vscode.Disposable {
         spec,
         (disposed) => this.#remove(disposed),
         (activated) => this.#activate(activated),
+        () => this.#refresh(),
+        this.#logger,
       );
     } catch (error) {
+      this.#logger.error(`Failed to create "${label}"`, error);
       await writerLease?.release();
       throw error;
     }
@@ -354,6 +368,9 @@ export class SessionManager implements vscode.Disposable {
   }
 
   #remove(session: SessionPanel): void {
+    this.#logger.info(
+      `Closed "${session.label}" (${session.kind}, ${session.cwd})`,
+    );
     const lease = this.#writerLeases.get(session.id);
     this.#writerLeases.delete(session.id);
     if (lease) {

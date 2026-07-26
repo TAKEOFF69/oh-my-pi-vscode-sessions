@@ -26,22 +26,21 @@ export class SessionTreeProvider
     const branch = session.branch ?? nodePath.basename(session.cwd);
     item.description =
       session.kind === "readonly"
-        ? `${branch} · read-only`
+        ? `${branch} · read-only · ${session.status}`
         : session.kind === "loop"
-          ? `${branch} · Loop controller`
-          : branch;
+          ? `${branch} · Loop controller · ${session.status}`
+          : `${branch} · ${session.status}`;
     item.tooltip = new vscode.MarkdownString(
       [
         `**${escapeMarkdown(session.label)}**`,
         "",
         `- Mode: ${session.kind === "readonly" ? "read-only" : session.kind === "loop" ? "Loop controller" : "work"}`,
+        `- Status: ${session.status}`,
         `- Branch: ${escapeMarkdown(session.branch ?? "not detected")}`,
         `- Directory: \`${session.cwd.replace(/`/g, "\\`")}\``,
       ].join("\n"),
     );
-    item.iconPath = new vscode.ThemeIcon(
-      session.active ? "circle-filled" : "terminal",
-    );
+    item.iconPath = statusIcon(session.status, session.active);
     item.contextValue = "ohMyPiSession";
     item.command = {
       command: "ohMyPiSessions.focusSession",
@@ -57,6 +56,31 @@ export class SessionTreeProvider
 
   dispose(): void {
     this.#onDidChangeTreeData.dispose();
+  }
+}
+
+function statusIcon(
+  status: SessionPanel["status"],
+  active: boolean,
+): vscode.ThemeIcon {
+  switch (status) {
+    case "starting":
+      return new vscode.ThemeIcon("sync~spin");
+    case "finished":
+      return new vscode.ThemeIcon(
+        "pass-filled",
+        new vscode.ThemeColor("testing.iconPassed"),
+      );
+    case "failed":
+      return new vscode.ThemeIcon(
+        "error",
+        new vscode.ThemeColor("testing.iconFailed"),
+      );
+    case "running":
+      return new vscode.ThemeIcon(
+        active ? "circle-filled" : "terminal",
+        new vscode.ThemeColor("testing.iconQueued"),
+      );
   }
 }
 

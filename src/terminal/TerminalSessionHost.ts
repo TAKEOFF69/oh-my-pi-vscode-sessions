@@ -5,7 +5,9 @@ import * as nodePath from "node:path";
 import * as vscode from "vscode";
 
 import { getTerminalFont } from "../config";
+import type { SessionLogger } from "../logging";
 import { parseTerminalMessage } from "../messages";
+import type { SessionStatus } from "../sessions/SessionPanel";
 import { PtySession } from "./ptySession";
 import { buildTerminalHtml } from "./terminalHtml";
 
@@ -15,6 +17,9 @@ export type TerminalSessionHostOptions = {
   cwd: string;
   executable: string;
   args: readonly string[];
+  label: string;
+  logger: SessionLogger;
+  onStatusChange: (status: SessionStatus) => void;
   onDidChangeVisibility: (
     listener: () => void,
   ) => vscode.Disposable;
@@ -27,6 +32,9 @@ export class TerminalSessionHost implements vscode.Disposable {
   readonly #cwd: string;
   readonly #executable: string;
   readonly #args: readonly string[];
+  readonly #label: string;
+  readonly #logger: SessionLogger;
+  readonly #onStatusChange: (status: SessionStatus) => void;
   readonly #pty = new PtySession();
   #cols = 80;
   #rows = 24;
@@ -43,6 +51,9 @@ export class TerminalSessionHost implements vscode.Disposable {
     this.#cwd = options.cwd;
     this.#executable = options.executable;
     this.#args = options.args;
+    this.#label = options.label;
+    this.#logger = options.logger;
+    this.#onStatusChange = options.onStatusChange;
 
     this.#webview.options = { enableScripts: true };
     this.#setWebviewHtml();
@@ -134,6 +145,7 @@ export class TerminalSessionHost implements vscode.Disposable {
 
     switch (message.type) {
       case "ready":
+        this.#logger.info(`Webview ready for "${this.#label}"`);
         this.#ready = true;
         this.#cols = message.cols ?? this.#cols;
         this.#rows = message.rows ?? this.#rows;
@@ -173,6 +185,10 @@ export class TerminalSessionHost implements vscode.Disposable {
 
     this.#spawned = true;
     this.#exited = false;
+    this.#setStatus("starting");
+    this.#logger.info(
+      `Spawning "${this.#label}" in ${this.#cwd} with ${this.#executable}`,
+    );
 
     try {
       this.#pty.spawn({
@@ -187,11 +203,16 @@ export class TerminalSessionHost implements vscode.Disposable {
         onExit: (code) => {
           this.#exited = true;
           this.#spawned = false;
+          this.#setStatus(code === 0 ? "finished" : "failed");
+          this.#logger.info(`"${this.#label}" exited with code ${code}`);
           void this.#webview.postMessage({ type: "exit", code });
         },
       });
+      this.#setStatus("running");
     } catch (error) {
       this.#spawned = false;
+      this.#setStatus("failed");
+      this.#logger.error(`Failed to start "${this.#label}"`, error);
       const message = error instanceof Error ? error.message : String(error);
       void vscode.window.showErrorMessage(
         `OMP Sessions: failed to start omp — ${message}`,
@@ -212,6 +233,10 @@ export class TerminalSessionHost implements vscode.Disposable {
     for (const data of pending) {
       this.#writeInput(data);
     }
+  }
+
+  #setStatus(status: SessionStatus): void {
+    this.#onStatusChange(status);
   }
 
   #writeInput(data: string): void {

@@ -1,11 +1,16 @@
 import * as vscode from "vscode";
 
+import { OutputSessionLogger } from "./logging";
 import { SessionManager } from "./sessions/SessionManager";
 import type { SessionPanel } from "./sessions/SessionPanel";
 import { resolveSessionPath } from "./worktrees";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const manager = new SessionManager(context.extensionUri);
+  const logger = new OutputSessionLogger();
+  const manager = new SessionManager(context.extensionUri, logger);
+  logger.info(
+    `Extension activated (workspace: ${vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).join(", ") || "none"})`,
+  );
 
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider(
@@ -48,6 +53,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("ohMyPiSessions.closeAll", () =>
       manager.closeAll(),
+    ),
+    vscode.commands.registerCommand("ohMyPiSessions.showLogs", () =>
+      logger.show(),
     ),
     vscode.commands.registerCommand(
       "ohMyPiSessions.sendSelection",
@@ -120,6 +128,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     manager,
+    logger,
   );
 
   if (

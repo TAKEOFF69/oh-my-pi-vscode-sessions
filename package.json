@@ -2,7 +2,7 @@
   "name": "oh-my-pi-vscode-sessions",
   "displayName": "Oh My Pi Sessions",
   "description": "Run concurrent Oh My Pi sessions in native VS Code editor tabs, each bound to its own folder or Git worktree.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",
@@ -37,6 +37,7 @@
     "onCommand:ohMyPiSessions.newSession",
     "onCommand:ohMyPiSessions.newReadOnlySession",
     "onCommand:ohMyPiSessions.newLoopSession",
+    "onCommand:ohMyPiSessions.showLogs",
     "onCommand:ohMyPiSessions.sendLines",
     "onCommand:ohMyPiSessions.sendSelection",
     "onCommand:ohMyPiSessions.sendFile",
@@ -131,6 +132,12 @@
         "icon": "$(close-all)"
       },
       {
+        "command": "ohMyPiSessions.showLogs",
+        "title": "Show Logs",
+        "category": "OMP Sessions",
+        "icon": "$(output)"
+      },
+      {
         "command": "ohMyPiSessions.sendLines",
         "title": "Send Line Reference to OMP",
         "category": "OMP Sessions",
@@ -170,6 +177,11 @@
           "command": "ohMyPiSessions.closeAll",
           "when": "view == ohMyPiSessions.sessions && ohMyPiSessions.hasSessions",
           "group": "navigation@4"
+        },
+        {
+          "command": "ohMyPiSessions.showLogs",
+          "when": "view == ohMyPiSessions.sessions",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [

@@ -5,6 +5,17 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-07-26
+
+### Added
+
+- Session lifecycle state in activity-bar roster: starting, running, finished, or failed.
+- Persistent **OMP Sessions: Show Logs** output with activation, worktree, launcher, PTY, and exit diagnostics.
+
+### Fixed
+
+- Failed or slow project launchers no longer look like inactive session tabs; state and diagnostic path remain visible.
+
 ## [1.2.0] - 2026-07-26
 
 ### Added
