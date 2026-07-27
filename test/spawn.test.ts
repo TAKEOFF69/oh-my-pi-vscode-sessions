@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildPtyEnv, buildSpawnCommand } from "../src/spawn";
+import {
+  buildCmdCommand,
+  buildPtyEnv,
+  buildSpawnCommand,
+} from "../src/spawn";
 
 describe("buildSpawnCommand", () => {
   it("uses login shell on unix", () => {
@@ -31,6 +35,23 @@ describe("buildSpawnCommand", () => {
     const result = buildSpawnCommand("omp");
     assert.ok(result.file.length > 0);
     assert.ok(result.args.length > 0);
+  });
+
+  it("passes arguments directly to an absolute executable", () => {
+    const result = buildSpawnCommand(process.execPath, [
+      "--thinking=max",
+      "--advisor",
+    ]);
+    assert.equal(result.file, process.execPath);
+    assert.deepEqual(result.args, ["--thinking=max", "--advisor"]);
+  });
+
+  it("uses cmd quoting rather than PowerShell quoting for cmd fallback", () => {
+    assert.equal(
+      buildCmdCommand("npm.cmd", ["run", "omp:loop", "--", "my loop"]),
+      'npm.cmd "run" "omp:loop" "--" "my loop"',
+    );
+    assert.equal(buildCmdCommand("tool.cmd", ["100%"]), 'tool.cmd "100%%"');
   });
 });
 

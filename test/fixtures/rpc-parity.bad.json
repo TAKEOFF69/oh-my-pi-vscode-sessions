@@ -1,0 +1,54 @@
+{
+  "state": {
+    "model": {
+      "provider": "openai-codex",
+      "id": "gpt-5.6-luna"
+    },
+    "thinkingLevel": "xhigh",
+    "cwd": "C:\\work\\wrong-tree",
+    "dumpTools": [
+      { "name": "read" },
+      { "name": "grep" },
+      { "name": "glob" },
+      { "name": "bash" },
+      { "name": "hub" }
+    ]
+  },
+  "profile": {
+    "name": "loop",
+    "provider": "anthropic",
+    "modelId": "claude-opus-5",
+    "thinkingLevel": "max",
+    "cwd": "C:\\work\\dzialki-loop",
+    "requiredTools": [
+      "read",
+      "grep",
+      "glob",
+      "lsp",
+      "todo",
+      "loop_control",
+      "loop_dispatch_plan",
+      "hub",
+      "dzialki_policy_status"
+    ],
+    "allowedTools": [
+      "read",
+      "grep",
+      "glob",
+      "lsp",
+      "todo",
+      "loop_control",
+      "loop_dispatch_plan",
+      "hub",
+      "dzialki_policy_status"
+    ],
+    "forbiddenTools": [
+      "bash",
+      "edit",
+      "write",
+      "delete",
+      "move",
+      "task"
+    ]
+  }
+}

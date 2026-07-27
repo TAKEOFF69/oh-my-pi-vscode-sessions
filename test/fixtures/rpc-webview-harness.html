@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>OMP RPC webview verification</title>
+    <style>
+      :root {
+        --vscode-editor-background: #151515;
+        --vscode-editor-foreground: #d8d8d8;
+        --vscode-descriptionForeground: #949494;
+        --vscode-font-family: Inter, "Segoe UI", sans-serif;
+        --vscode-font-size: 13px;
+        --vscode-editor-font-family: "Cascadia Code", Consolas, monospace;
+        --vscode-textLink-foreground: #75beff;
+        --vscode-textLink-activeForeground: #a8d7ff;
+        --vscode-testing-iconPassed: #73c991;
+        --vscode-testing-iconFailed: #f14c4c;
+        --vscode-input-background: #202020;
+        --vscode-input-foreground: #e5e5e5;
+        --vscode-input-border: #454545;
+        --vscode-focusBorder: #c9943c;
+        --vscode-button-background: #9a6d23;
+        --vscode-button-foreground: #ffffff;
+        --vscode-button-hoverBackground: #b37d28;
+        --vscode-button-secondaryBackground: #2e2e2e;
+        --vscode-button-secondaryForeground: #d8d8d8;
+        --vscode-button-secondaryHoverBackground: #3c3c3c;
+        --vscode-scrollbarSlider-background: #79797966;
+        --vscode-scrollbarSlider-hoverBackground: #646464b3;
+      }
+    </style>
+    <link rel="stylesheet" href="../../dist/rpc-webview.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      window.__OMP_RPC_FIXTURE__ = [
+        {
+          type: "bootstrap",
+          cwd: "C:\\worktrees\\consumer-share",
+          branch: "wip/20260727-consumer-share",
+          kind: "loop",
+          advisorLabel: "GPT-5.6 Sol · xhigh",
+          parityRequired: true
+        },
+        {
+          type: "rpc",
+          frame: {
+            type: "response",
+            command: "get_state",
+            success: true,
+            data: {
+              model: { provider: "anthropic", id: "claude-opus-5" },
+              thinkingLevel: "max",
+              sessionName: "consumer-share",
+              contextUsage: {
+                tokens: 48200,
+                contextWindow: 200000,
+                percent: 24.1
+              },
+              dumpTools: [
+                { name: "read" },
+                { name: "loop_control" },
+                { name: "loop_dispatch_plan" },
+                { name: "hub" }
+              ]
+            }
+          }
+        },
+        { type: "parity", ok: true },
+        { type: "transport", status: "ready" },
+        {
+          type: "rpc",
+          frame: {
+            type: "response",
+            command: "get_messages",
+            success: true,
+            data: {
+              messages: [
+                {
+                  role: "user",
+                  content: [{ type: "text", text: "/loop-start consumer-share" }]
+                },
+                {
+                  role: "assistant",
+                  content: [
+                    {
+                      type: "thinking",
+                      thinking: "Checking lease, manifest digest, and dispatch readiness."
+                    },
+                    {
+                      type: "text",
+                      text: "Controller acquired the alias lease. I am validating stage entry before dispatch."
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          type: "rpc",
+          frame: {
+            type: "tool_execution_start",
+            toolCallId: "tool-verify",
+            toolName: "loop_dispatch_plan",
+            args: {
+              alias: "consumer-share",
+              stage: "implementation"
+            }
+          }
+        },
+        {
+          type: "rpc",
+          frame: {
+            type: "tool_execution_end",
+            toolCallId: "tool-verify",
+            toolName: "loop_dispatch_plan",
+            result: {
+              status: "armed",
+              tasks: 3,
+              digest: "sha256:5d318a…"
+            },
+            isError: false
+          }
+        },
+        {
+          type: "rpc",
+          frame: {
+            type: "message_start",
+            message: {
+              role: "custom",
+              customType: "advisor",
+              content: "<advisory severity=\"warning\">Stage scope is valid. Keep merge authority in the controller and reject stale worker evidence.</advisory>"
+            }
+          }
+        },
+        {
+          type: "rpc",
+          frame: {
+            type: "message_end",
+            message: {
+              role: "custom",
+              customType: "advisor",
+              content: "<advisory severity=\"warning\">Stage scope is valid. Keep merge authority in the controller and reject stale worker evidence.</advisory>"
+            }
+          }
+        },
+        {
+          type: "rpc",
+          frame: {
+            type: "subagent_progress",
+            payload: {
+              subagentId: "worker-1",
+              name: "implementation-1",
+              status: "running",
+              currentTask: "Implementing share surface"
+            }
+          }
+        }
+      ];
+    </script>
+    <script src="../../dist/rpc-webview.js"></script>
+  </body>
+</html>

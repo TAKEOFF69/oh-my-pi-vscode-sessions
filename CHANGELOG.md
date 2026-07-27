@@ -5,6 +5,67 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-27
+
+### Added
+
+- Structured OMP RPC sessions as the default native editor-tab surface.
+- Protocol-v2 negotiation, bounded JSONL/chunk decoder, correlated requests, and
+  process-tree lifecycle management.
+- Conversation, thinking, advisor, tool, retry, compaction, TTSR, todo, subagent,
+  command, and extension-request presentation.
+- Send, steer, follow-up, abort, file/URL handoff, history hydration, and runtime
+  state rail.
+- Fail-closed Dzialkopedia parity profiles for model, effort, worktree launch,
+  exact allowed tools, forbidden tools, and project-policy presence.
+- Bounded paged history hydration, late prompt-failure draft restoration, and
+  pre-parity extension-UI cancellation.
+- Explicit **Open Diagnostic TUI Session** command; no automatic terminal fallback.
+- Seeded parity selftest, fake RPC lifecycle integration test, and desktop/narrow
+  Playwright webview verification.
+
+### Changed
+
+- Repository Loop sessions start RPC first, validate parity, then dispatch
+  `/loop-start <alias>` through the host.
+- Worktree writer leases now cover both structured RPC and diagnostic TUI sessions.
+- Writer leases bind canonical repository roots across nested paths and junctions,
+  and release only after the OMP process tree is reaped.
+- Dzialkopedia launcher discovery now requires its canonical Git origin and
+  byte-equivalence for the full canonical GitHub `main` adapter inventory before
+  local launcher execution, using authenticated pinned-host GitHub tree hashes plus
+  exact set equality with the immutable canonical preflight declaration.
+- Diagnostic TUI is read-only only under trusted project policy; generic diagnostic
+  TUI acquires a writer lease and generic read-only RPC fails closed. Extension
+  deactivation now awaits full Windows process-tree or Unix process-group reaping
+  before releasing writer leases.
+
+## [1.2.1] - 2026-07-26
+
+### Added
+
+- Session lifecycle state in activity-bar roster: starting, running, finished, or failed.
+- Persistent **OMP Sessions: Show Logs** output with activation, worktree, launcher, PTY, and exit diagnostics.
+
+### Fixed
+
+- Failed or slow project launchers no longer look like inactive session tabs; state and diagnostic path remain visible.
+
+## [1.2.0] - 2026-07-26
+
+### Added
+
+- Forked as **Oh My Pi Sessions**.
+- Concurrent native VS Code editor tabs, each owning one PTY and OMP process.
+- Existing-Git-worktree picker with cwd and branch identity per session.
+- Atomic cross-window write-owner leases with read-only/focus recovery.
+- Read-only brainstorming sessions without Bash or mutation tools.
+- Windows OMP executable auto-detection for stale VS Code PATH state.
+- Active-session list with focus, rename, restart, close, and source-context actions.
+- Loop controller tabs that invoke repository-owned `npm run omp:loop -- <alias>` safely.
+- Source context remapping into selected worktree; unrelated or missing targets are refused.
+- Per-worktree project-launcher detection, independent of lobby workspace settings.
+
 ## [1.1.0] - 2026-07-14
 
 ### Added

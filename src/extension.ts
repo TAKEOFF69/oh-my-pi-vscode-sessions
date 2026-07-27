@@ -1,75 +1,167 @@
 import * as vscode from "vscode";
 
-import { TerminalViewProvider } from "./terminal/TerminalViewProvider";
+import { OutputSessionLogger } from "./logging";
+import { SessionManager } from "./sessions/SessionManager";
+import type { SessionPanel } from "./sessions/SessionPanel";
+import { resolveSessionPath } from "./worktrees";
+
+let activeManager: SessionManager | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new TerminalViewProvider(context.extensionUri);
+  const logger = new OutputSessionLogger();
+  const manager = new SessionManager(context.extensionUri, logger);
+  activeManager = manager;
+  logger.info(
+    `Extension activated (workspace: ${vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).join(", ") || "none"})`,
+  );
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(TerminalViewProvider.viewType, provider, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
-    vscode.commands.registerCommand("ohMyPi.open", () => {
-      provider.reveal();
-    }),
-    vscode.commands.registerCommand("ohMyPi.restart", () => {
-      provider.restart();
-    }),
-    vscode.commands.registerCommand("ohMyPi.search", () => {
-      provider.search();
-    }),
-    vscode.commands.registerCommand("ohMyPi.sendSelection", () => {
+    vscode.window.registerTreeDataProvider(
+      "ohMyPiSessions.sessions",
+      manager.tree,
+    ),
+    vscode.commands.registerCommand("ohMyPiSessions.open", () =>
+      manager.openOrCreate(),
+    ),
+    vscode.commands.registerCommand("ohMyPiSessions.newSession", () =>
+      manager.newSession("work"),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.newTerminalSession",
+      () => manager.newSession("readonly", "terminal"),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.newReadOnlySession",
+      () => manager.newSession("readonly"),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.newLoopSession",
+      () => manager.newSession("loop"),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.focusSession",
+      (session?: SessionPanel) => manager.focus(session),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.restartSession",
+      (session?: SessionPanel) => manager.restart(session),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.searchSession",
+      (session?: SessionPanel) => manager.search(session),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.renameSession",
+      (session?: SessionPanel) => manager.rename(session),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.closeSession",
+      (session?: SessionPanel) => manager.close(session),
+    ),
+    vscode.commands.registerCommand("ohMyPiSessions.closeAll", () =>
+      manager.closeAll(),
+    ),
+    vscode.commands.registerCommand("ohMyPiSessions.showLogs", () =>
+      logger.show(),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.sendSelection",
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          return;
+        }
+        const selection = editor.selection;
+        const text = selection.isEmpty
+          ? editor.document.lineAt(selection.active.line).text
+          : editor.document.getText(selection);
+        if (!text) {
+          return;
+        }
+        const target = await manager.resolveTarget();
+        target?.send(text);
+      },
+    ),
+    vscode.commands.registerCommand("ohMyPiSessions.sendLines", async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         return;
       }
-      const sel = editor.selection;
-      const text = sel.isEmpty
-        ? editor.document.lineAt(sel.active.line).text
-        : editor.document.getText(sel);
-      if (text.length === 0) {
+      const target = await manager.resolveTarget();
+      if (!target) {
         return;
       }
-      provider.send(text);
-    }),
-    vscode.commands.registerCommand("ohMyPi.sendLines", () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        return;
-      }
-      const { document, selection } = editor;
-      const relPath = vscode.workspace.asRelativePath(document.uri);
 
-      // Whole-line range (0-indexed internally; editor display is 1-indexed).
+      const { document, selection } = editor;
       let start = selection.start.line;
       let end = selection.end.line;
-      // A selection ending at column 0 does not include that last line.
       if (selection.end.character === 0 && end > start) {
         end -= 1;
       }
-      // Clamp to the valid document range.
       const lastLine = document.lineCount - 1;
       start = Math.max(0, Math.min(start, lastLine));
       end = Math.max(0, Math.min(end, lastLine));
 
-      const startNo = start + 1;
-      const endNo = end + 1;
-      const ref = startNo === endNo ? `${relPath}:${startNo}` : `${relPath}:${startNo}-${endNo}`;
-      provider.send(ref + "\n");
+      const startNumber = start + 1;
+      const endNumber = end + 1;
+      const filePath = await pathForSession(
+        document.uri.fsPath,
+        target.cwd,
+      );
+      if (!filePath) {
+        return;
+      }
+      const reference =
+        startNumber === endNumber
+          ? `${filePath}:${startNumber}`
+          : `${filePath}:${startNumber}-${endNumber}`;
+      target.send(`${reference}\n`);
     }),
-    vscode.commands.registerCommand("ohMyPi.sendFile", () => {
+    vscode.commands.registerCommand("ohMyPiSessions.sendFile", async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         return;
       }
-      provider.send(vscode.workspace.asRelativePath(editor.document.uri) + "\n");
+      const target = await manager.resolveTarget();
+      if (!target) {
+        return;
+      }
+      const filePath = await pathForSession(
+        editor.document.uri.fsPath,
+        target.cwd,
+      );
+      if (filePath) {
+        target.send(`${filePath}\n`);
+      }
     }),
-    provider,
+    manager,
+    logger,
   );
 
-  if (vscode.workspace.getConfiguration("ohMyPi").get<boolean>("autoStart", false)) {
-    provider.reveal();
+  if (
+    vscode.workspace
+      .getConfiguration("ohMyPiSessions")
+      .get<boolean>("autoStart", false)
+  ) {
+    void manager.newSession("work");
   }
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> {
+  const manager = activeManager;
+  activeManager = undefined;
+  await manager?.shutdown();
+}
+
+async function pathForSession(
+  filePath: string,
+  cwd: string,
+): Promise<string | undefined> {
+  const resolved = await resolveSessionPath(filePath, cwd);
+  if (!resolved) {
+    await vscode.window.showWarningMessage(
+      "File is outside selected OMP worktree or has no matching file there. Nothing was sent.",
+    );
+  }
+  return resolved;
+}
