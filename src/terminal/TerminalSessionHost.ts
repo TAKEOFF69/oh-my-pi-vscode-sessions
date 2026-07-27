@@ -8,7 +8,10 @@ import { getTerminalFont } from "../config";
 import type { SessionLogger } from "../logging";
 import { parseTerminalMessage } from "../messages";
 import type { SessionStatus } from "../sessions/SessionPanel";
-import { PtySession } from "./ptySession";
+import {
+  PtySession,
+  restartPtyAfterTeardown,
+} from "./ptySession";
 import { buildTerminalHtml } from "./terminalHtml";
 
 export type TerminalSessionHostOptions = {
@@ -42,6 +45,8 @@ export class TerminalSessionHost implements vscode.Disposable {
   #exited = false;
   #disposed = false;
   #ready = false;
+  #restartPromise: Promise<void> | undefined;
+  #disposePromise: Promise<void> | undefined;
   #pendingInput: string[] = [];
   #disposables: vscode.Disposable[] = [];
 
@@ -82,7 +87,13 @@ export class TerminalSessionHost implements vscode.Disposable {
       return;
     }
     if (this.#exited) {
-      this.restart();
+      void this.restart().then(() => {
+        if (!this.#disposed && this.#ready) {
+          this.#ensurePty();
+          this.#writeInput(data);
+        }
+      });
+      return;
     }
     if (!this.#ready) {
       this.#pendingInput.push(data);
@@ -92,17 +103,32 @@ export class TerminalSessionHost implements vscode.Disposable {
     this.#writeInput(data);
   }
 
-  restart(): void {
+  async restart(): Promise<void> {
+    if (this.#restartPromise) {
+      return this.#restartPromise;
+    }
     if (this.#disposed) {
       return;
     }
-    this.#pty.dispose();
-    this.#spawned = false;
-    this.#exited = false;
-    void this.#webview.postMessage({ type: "clear" });
-    if (this.#ready) {
-      this.#ensurePty();
-    }
+    this.#restartPromise = this.#restartPty().finally(() => {
+      this.#restartPromise = undefined;
+    });
+    return this.#restartPromise;
+  }
+
+  async #restartPty(): Promise<void> {
+    await restartPtyAfterTeardown(
+      () => this.#pty.dispose(),
+      () => this.#disposed,
+      () => {
+        this.#spawned = false;
+        this.#exited = false;
+        void this.#webview.postMessage({ type: "clear" });
+        if (this.#ready) {
+          this.#ensurePty();
+        }
+      },
+    );
   }
 
   search(): void {
@@ -128,17 +154,21 @@ export class TerminalSessionHost implements vscode.Disposable {
     });
   }
 
-  dispose(): void {
-    if (this.#disposed) {
-      return;
+  async dispose(): Promise<void> {
+    if (this.#disposePromise) {
+      return this.#disposePromise;
     }
     this.#disposed = true;
-    this.#pty.dispose();
-    for (const disposable of this.#disposables) {
-      disposable.dispose();
-    }
-    this.#disposables = [];
-    this.#pendingInput = [];
+    this.#disposePromise = (async () => {
+      await this.#restartPromise;
+      await this.#pty.dispose();
+      for (const disposable of this.#disposables) {
+        disposable.dispose();
+      }
+      this.#disposables = [];
+      this.#pendingInput = [];
+    })();
+    return this.#disposePromise;
   }
 
   #handleMessage(raw: unknown): void {
@@ -163,7 +193,13 @@ export class TerminalSessionHost implements vscode.Disposable {
         break;
       case "input":
         if (this.#exited) {
-          this.restart();
+          void this.restart().then(() => {
+            if (!this.#disposed && this.#ready) {
+              this.#ensurePty();
+              this.#writeInput(message.data ?? "");
+            }
+          });
+          break;
         }
         this.#ensurePty();
         this.#writeInput(message.data ?? "");
@@ -182,6 +218,9 @@ export class TerminalSessionHost implements vscode.Disposable {
   }
 
   #ensurePty(): void {
+    if (this.#disposed) {
+      return;
+    }
     if (this.#spawned && !this.#exited) {
       this.#pty.resize(this.#cols, this.#rows);
       return;

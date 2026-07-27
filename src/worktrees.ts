@@ -14,6 +14,7 @@ export type GitWorktree = {
 export type GitRepositoryIdentity = {
   root: string;
   commonDir: string;
+  origin?: string;
 };
 
 export async function listGitWorktrees(cwd: string): Promise<GitWorktree[]> {
@@ -147,12 +148,20 @@ export async function repositoryIdentity(
         "--git-common-dir",
       ])
     ).trim();
-    return root && commonDir
-      ? {
-          root: nodePath.resolve(root),
-          commonDir: nodePath.resolve(commonDir),
-        }
-      : undefined;
+    if (!root || !commonDir) {
+      return undefined;
+    }
+    let origin: string | undefined;
+    try {
+      origin = (await runGit(root, ["remote", "get-url", "origin"])).trim();
+    } catch {
+      origin = undefined;
+    }
+    return {
+      root: nodePath.resolve(root),
+      commonDir: nodePath.resolve(commonDir),
+      ...(origin ? { origin } : {}),
+    };
   } catch {
     return undefined;
   }

@@ -1,0 +1,58 @@
+{
+  "state": {
+    "model": {
+      "provider": "anthropic",
+      "id": "claude-opus-5"
+    },
+    "thinkingLevel": "max",
+    "cwd": "C:\\work\\dzialki-loop",
+    "dumpTools": [
+      { "name": "read" },
+      { "name": "grep" },
+      { "name": "glob" },
+      { "name": "lsp" },
+      { "name": "todo" },
+      { "name": "loop_control" },
+      { "name": "loop_dispatch_plan" },
+      { "name": "hub" },
+      { "name": "dzialki_policy_status" }
+    ]
+  },
+  "profile": {
+    "name": "loop",
+    "provider": "anthropic",
+    "modelId": "claude-opus-5",
+    "thinkingLevel": "max",
+    "cwd": "C:\\work\\dzialki-loop",
+    "requiredTools": [
+      "read",
+      "grep",
+      "glob",
+      "lsp",
+      "todo",
+      "loop_control",
+      "loop_dispatch_plan",
+      "hub",
+      "dzialki_policy_status"
+    ],
+    "allowedTools": [
+      "read",
+      "grep",
+      "glob",
+      "lsp",
+      "todo",
+      "loop_control",
+      "loop_dispatch_plan",
+      "hub",
+      "dzialki_policy_status"
+    ],
+    "forbiddenTools": [
+      "bash",
+      "edit",
+      "write",
+      "delete",
+      "move",
+      "task"
+    ]
+  }
+}

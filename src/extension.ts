@@ -5,9 +5,12 @@ import { SessionManager } from "./sessions/SessionManager";
 import type { SessionPanel } from "./sessions/SessionPanel";
 import { resolveSessionPath } from "./worktrees";
 
+let activeManager: SessionManager | undefined;
+
 export function activate(context: vscode.ExtensionContext): void {
   const logger = new OutputSessionLogger();
   const manager = new SessionManager(context.extensionUri, logger);
+  activeManager = manager;
   logger.info(
     `Extension activated (workspace: ${vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).join(", ") || "none"})`,
   );
@@ -22,6 +25,10 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("ohMyPiSessions.newSession", () =>
       manager.newSession("work"),
+    ),
+    vscode.commands.registerCommand(
+      "ohMyPiSessions.newTerminalSession",
+      () => manager.newSession("readonly", "terminal"),
     ),
     vscode.commands.registerCommand(
       "ohMyPiSessions.newReadOnlySession",
@@ -140,7 +147,11 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> {
+  const manager = activeManager;
+  activeManager = undefined;
+  await manager?.shutdown();
+}
 
 async function pathForSession(
   filePath: string,

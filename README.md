@@ -2,14 +2,15 @@
 
 Run multiple independent [Oh My Pi](https://github.com/can1357/oh-my-pi)
 sessions in one VS Code window. Each OMP process opens as a native editor tab and
-has its own working directory, terminal state, and lifecycle.
+has its own working directory, structured RPC state, and lifecycle.
 
 ## Why this fork exists
 
 The upstream
 [Oh My Pi for VS Code](https://github.com/shohihul/oh-my-pi-vscode) extension
-provides one excellent embedded sidebar terminal. This fork keeps its xterm/PTTY
-foundation and adds a session manager for parallel, worktree-heavy development.
+provides one excellent embedded sidebar terminal. This fork adds a session manager
+and structured RPC surface for parallel, worktree-heavy development. Original
+xterm/PTTY surface remains as an explicitly selected diagnostic TUI.
 
 The UX direction also draws from
 [OMP Desktop](https://github.com/MTEnt/omp-desktop) and
@@ -21,7 +22,8 @@ the interface orchestrates sessions while OMP remains the agent runtime.
 1. Open **OMP Sessions** from the activity bar.
 2. Click **+** for work, **play** for a Loop controller, or lightbulb for read-only.
 3. Pick current workspace or any existing Git worktree.
-4. Work in the new `π …` editor tab.
+4. Work in the new `π …` editor tab with conversation, advisor, tool, retry,
+   compaction, and subagent events rendered directly.
 5. Repeat. Tabs run concurrently and may be moved into VS Code split groups.
 
 One VS Code window can therefore contain:
@@ -31,9 +33,11 @@ One VS Code window can therefore contain:
 - a read-only architecture or brainstorming session;
 - ordinary source editors alongside all of them.
 
-For a repository exposing `npm run omp:loop -- <alias>`, use **New Loop
-Controller**. Pick clean controller worktree and enter alias. Tab launches repository's
-locked Loop profile directly; second writer cannot claim same controller directory.
+For a repository exposing `scripts/omp/launch.mjs`, use **New Loop Controller**.
+Pick a clean controller worktree and enter an alias. The extension starts the locked
+RPC profile, checks exact runtime parity, then sends `/loop-start <alias>`.
+Mismatched model, effort, cwd, or tool surface blocks the prompt before the
+controller starts. A second writer cannot claim the same controller directory.
 
 The rule is **one writing session per worktree**, not one VS Code window per
 worktree. Atomic leases under shared Git directory enforce this across tabs,
@@ -45,7 +49,7 @@ directory is occupied, use read-only mode or focus/close existing owner.
 Read-only tabs start OMP with a restricted tool list:
 
 ```text
-read, grep, glob, lsp, inspect_image, browser, web_search, ask, todo
+read, grep, glob, lsp, inspect_image, browser, web_search, todo
 ```
 
 No `bash`, `edit`, `write`, or `task` tool is enabled. This makes sharing a source
@@ -76,9 +80,44 @@ Manual override:
 The original extension's `ohMyPi.executablePath` setting is also read as a migration
 fallback.
 
+## RPC parity and capabilities
+
+OMP remains the runtime and authority. The extension does not replace its model
+routing, advisor, skills, tools, session storage, or Loop controller. It negotiates
+RPC protocol v2 and renders:
+
+- streaming messages and thinking;
+- live tool calls and results;
+- advisor interventions;
+- retries, compaction, TTSR, todos, and subagent progress;
+- slash-command discovery;
+- send, steer, follow-up, and abort;
+- OMP extension confirmations, selections, and editor input;
+- model, effort, context, queue, worktree, and parity state.
+
+The Dzialkopedia launcher pins Opus 5/max as controller, keeps Sol 5.6/xhigh
+advisor configuration, and exposes Loop-only tools only in Loop mode. Exact
+runtime tool inventory must match, and every profile requires a project-policy
+marker tool, before any prompt is accepted. Repository launcher discovery also
+requires the canonical Dzialkopedia Git origin and byte equality for every
+launch-critical adapter file against canonical GitHub `main`. Private-repository
+verification uses authenticated GitHub CLI (`gh auth status`) and fails closed when
+canonical tree hashes cannot be loaded. The immutable canonical preflight blob must
+also declare exactly the same duplicate-free adapter inventory pinned by the extension,
+so a new executable dependency cannot bypass validation. See the
+[RPC cutover contract](docs/rpc-cutover.md).
+
+**OMP Sessions: Open Diagnostic TUI Session** starts the real terminal surface
+only when explicitly requested. Under trusted Dzialkopedia policy it uses the
+read-only profile. In a generic folder, where OMP extension/MCP mounts cannot be
+proven read-only, it acquires the normal writer lease. Generic structured read-only
+sessions fail closed without a trusted project policy launcher. No automatic fallback
+and no shadow process exist.
+
 ## Commands
 
 - `OMP Sessions: New Work Session`
+- `OMP Sessions: Open Diagnostic TUI Session`
 - `OMP Sessions: New Read-Only Session`
 - `OMP Sessions: New Loop Controller`
 - `OMP Sessions: Open Active Session`
@@ -103,18 +142,21 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-1.2.1.vsix
+code --install-extension oh-my-pi-vscode-sessions-2.0.0.vsix --force
 ```
 
 ## Current boundary
 
-Tabs are native VS Code webview panels containing OMP's real TUI. Processes live
-concurrently while the window is open. Closing VS Code terminates the PTYs; OMP's
-saved sessions remain available through its normal `--continue` and `--resume`
-commands.
+Tabs are native VS Code webview panels connected to real OMP RPC processes.
+Processes live concurrently while the window is open. Closing a tab or deactivating
+the extension terminates its full process tree and waits for reaping before releasing its
+worktree writer lease;
+OMP's session file remains available for restart and resume. Repository root,
+nested-folder, and junction selections share one canonical lease identity.
 
-Rich RPC tool cards, checkpoints, and inline diff widgets are possible later, but
-are intentionally outside this first reliable multi-session layer.
+Generic filesystem rollback/checkpoints are intentionally excluded: under parallel
+worktrees they can revert unrelated work. OMP custom TUI-only components are not
+fabricated; use the explicit diagnostic TUI when investigating one.
 
 ## License
 

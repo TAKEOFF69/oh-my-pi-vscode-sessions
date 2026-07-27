@@ -20,14 +20,17 @@ import {
   type WriterLease,
 } from "../worktreeLease";
 import {
+  buildSessionLaunchPlan,
+  canOfferReadOnlyDowngrade,
+  resolveEffectiveSessionKind,
+} from "../sessionLaunch";
+import {
   SessionPanel,
   type SessionKind,
   type SessionSpec,
+  type SessionTransport,
 } from "./SessionPanel";
 import { SessionTreeProvider } from "./SessionTreeProvider";
-
-const READ_ONLY_TOOLS =
-  "read,grep,glob,lsp,inspect_image,browser,web_search,ask,todo";
 
 type DirectoryChoice = vscode.QuickPickItem & {
   cwd?: string;
@@ -42,6 +45,7 @@ export class SessionManager implements vscode.Disposable {
   #sessions: SessionPanel[] = [];
   #active: SessionPanel | undefined;
   #writerLeases = new Map<string, WriterLease>();
+  #shutdownPromise: Promise<void> | undefined;
 
   constructor(extensionUri: vscode.Uri, logger: SessionLogger) {
     this.#extensionUri = extensionUri;
@@ -56,8 +60,11 @@ export class SessionManager implements vscode.Disposable {
     return this.#active;
   }
 
-  async newSession(kind: SessionKind = "work"): Promise<SessionPanel | undefined> {
-    this.#logger.info(`New ${kind} session requested`);
+  async newSession(
+    kind: SessionKind = "work",
+    transport: SessionTransport = "rpc",
+  ): Promise<SessionPanel | undefined> {
+    this.#logger.info(`New ${kind} ${transport} session requested`);
     const directory = await this.#pickDirectory();
     if (!directory) {
       this.#logger.info(`New ${kind} session cancelled before directory selection`);
@@ -67,15 +74,46 @@ export class SessionManager implements vscode.Disposable {
       `Selected ${kind} session directory ${directory.cwd}${directory.branch ? ` (${directory.branch})` : ""}`,
     );
 
-    let resolvedKind = kind;
-    if (kind !== "readonly") {
+    let projectLauncher;
+    try {
+      projectLauncher = await detectProjectLauncher(directory.cwd);
+    } catch (error) {
+      await vscode.window.showErrorMessage(
+        `OMP Sessions: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return undefined;
+    }
+    const safety = resolveEffectiveSessionKind(
+      transport === "terminal" ? "readonly" : kind,
+      transport,
+      Boolean(projectLauncher),
+    );
+    if (safety.blockReason) {
+      await vscode.window.showErrorMessage(
+        `OMP Sessions: ${safety.blockReason}`,
+      );
+      return undefined;
+    }
+    let resolvedKind = safety.kind;
+    if (
+      transport === "terminal" &&
+      resolvedKind === "work" &&
+      !projectLauncher
+    ) {
+      this.#logger.info(
+        "Generic diagnostic TUI is writer-capable and will acquire the worktree writer lease",
+      );
+    }
+    if (resolvedKind !== "readonly") {
       const conflicting = this.#sessions.find(
         (session) =>
           session.kind !== "readonly" &&
           sameDirectory(session.cwd, directory.cwd),
       );
       if (conflicting) {
-        if (kind === "loop") {
+        if (resolvedKind === "loop") {
           const choice = await vscode.window.showWarningMessage(
             `"${conflicting.label}" already owns write access to this controller directory.`,
             { modal: true },
@@ -87,12 +125,21 @@ export class SessionManager implements vscode.Disposable {
           }
           return undefined;
         }
-        const choice = await vscode.window.showWarningMessage(
-          `"${conflicting.label}" already owns write access to this directory.`,
-          { modal: true },
-          "Open read-only",
-          "Focus existing",
+        const allowReadOnly = canOfferReadOnlyDowngrade(
+          Boolean(projectLauncher),
         );
+        const choice = allowReadOnly
+          ? await vscode.window.showWarningMessage(
+              `"${conflicting.label}" already owns write access to this directory.`,
+              { modal: true },
+              "Open read-only",
+              "Focus existing",
+            )
+          : await vscode.window.showWarningMessage(
+              `"${conflicting.label}" already owns write access to this directory. Generic OMP cannot prove a read-only tool surface.`,
+              { modal: true },
+              "Focus existing",
+            );
         if (choice === "Focus existing") {
           conflicting.reveal();
           return conflicting;
@@ -104,9 +151,21 @@ export class SessionManager implements vscode.Disposable {
         }
       }
     }
+    const finalSafety = resolveEffectiveSessionKind(
+      resolvedKind,
+      transport,
+      Boolean(projectLauncher),
+    );
+    if (finalSafety.blockReason) {
+      await vscode.window.showErrorMessage(
+        `OMP Sessions: ${finalSafety.blockReason}`,
+      );
+      return undefined;
+    }
+    resolvedKind = finalSafety.kind;
 
     let loopAlias: string | undefined;
-    if (kind === "loop") {
+    if (resolvedKind === "loop") {
       loopAlias = await vscode.window.showInputBox({
         title: "Loop v2 alias",
         prompt: "Tracked start alias passed to npm run omp:loop",
@@ -142,17 +201,25 @@ export class SessionManager implements vscode.Disposable {
       }
       writerLease = leaseAttempt.lease;
     }
-    const projectLauncher = detectProjectLauncher(directory.cwd);
-    let executable = projectLauncher?.executable ?? getExecutable();
-    const args = projectLauncher ? [] : [...getDefaultArguments()];
-    if (resolvedKind === "readonly") {
-      args.push(
-        projectLauncher?.readOnlyArgument ?? `--tools=${READ_ONLY_TOOLS}`,
+    let launch;
+    try {
+      launch = buildSessionLaunchPlan({
+        kind: resolvedKind,
+        transport,
+        cwd: directory.cwd,
+        loopAlias,
+        projectLauncher,
+        fallbackExecutable: getExecutable(),
+        defaultArguments: getDefaultArguments(),
+      });
+    } catch (error) {
+      await writerLease?.release();
+      await vscode.window.showErrorMessage(
+        `OMP Sessions: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
-    } else if (resolvedKind === "loop" && loopAlias) {
-      executable = process.platform === "win32" ? "npm.cmd" : "npm";
-      args.length = 0;
-      args.push("run", "omp:loop", "--", loopAlias);
+      return undefined;
     }
 
     const spec: SessionSpec = {
@@ -161,11 +228,14 @@ export class SessionManager implements vscode.Disposable {
       cwd: directory.cwd,
       branch: directory.branch,
       kind: resolvedKind,
-      executable,
-      args,
+      transport,
+      executable: launch.executable,
+      args: launch.args,
+      initialPrompt: launch.initialPrompt,
+      parity: launch.parity,
     };
     this.#logger.info(
-      `Starting "${label}" as ${resolvedKind}; executable=${executable}; projectLauncher=${projectLauncher ? "yes" : "no"}`,
+      `Starting "${label}" as ${resolvedKind}/${transport}; executable=${launch.executable}; projectLauncher=${projectLauncher ? "yes" : "no"}`,
     );
     let session: SessionPanel;
     try {
@@ -235,7 +305,7 @@ export class SessionManager implements vscode.Disposable {
       void vscode.window.showInformationMessage("No OMP session is open.");
       return;
     }
-    target.restart();
+    void target.restart();
   }
 
   search(session?: SessionPanel): void {
@@ -264,15 +334,26 @@ export class SessionManager implements vscode.Disposable {
     (session ?? this.#active)?.dispose();
   }
 
-  closeAll(): void {
-    for (const session of [...this.#sessions]) {
-      session.dispose();
-    }
+  async closeAll(): Promise<void> {
+    await Promise.all(
+      [...this.#sessions].map((session) => session.shutdown()),
+    );
   }
 
   dispose(): void {
-    this.closeAll();
-    this.tree.dispose();
+    void this.shutdown().catch((error) => {
+      this.#logger.error("Failed to shut down all OMP sessions", error);
+    });
+  }
+
+  shutdown(): Promise<void> {
+    if (!this.#shutdownPromise) {
+      this.#shutdownPromise = (async () => {
+        await this.closeAll();
+        this.tree.dispose();
+      })();
+    }
+    return this.#shutdownPromise;
   }
 
   async #pickDirectory(): Promise<
@@ -367,14 +448,14 @@ export class SessionManager implements vscode.Disposable {
     this.#refresh();
   }
 
-  #remove(session: SessionPanel): void {
+  async #remove(session: SessionPanel): Promise<void> {
     this.#logger.info(
       `Closed "${session.label}" (${session.kind}, ${session.cwd})`,
     );
     const lease = this.#writerLeases.get(session.id);
     this.#writerLeases.delete(session.id);
     if (lease) {
-      void lease.release();
+      await lease.release();
     }
     this.#sessions = this.#sessions.filter((candidate) => candidate !== session);
     if (this.#active === session) {

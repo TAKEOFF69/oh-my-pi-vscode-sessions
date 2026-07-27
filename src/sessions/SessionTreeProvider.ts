@@ -24,17 +24,19 @@ export class SessionTreeProvider
       vscode.TreeItemCollapsibleState.None,
     );
     const branch = session.branch ?? nodePath.basename(session.cwd);
+    const transport = session.transport === "rpc" ? "RPC" : "terminal";
     item.description =
       session.kind === "readonly"
-        ? `${branch} · read-only · ${session.status}`
+        ? `${branch} · read-only ${transport} · ${session.status}`
         : session.kind === "loop"
-          ? `${branch} · Loop controller · ${session.status}`
-          : `${branch} · ${session.status}`;
+          ? `${branch} · Loop ${transport} · ${session.status}`
+          : `${branch} · ${transport} · ${session.status}`;
     item.tooltip = new vscode.MarkdownString(
       [
         `**${escapeMarkdown(session.label)}**`,
         "",
         `- Mode: ${session.kind === "readonly" ? "read-only" : session.kind === "loop" ? "Loop controller" : "work"}`,
+        `- Surface: ${transport}`,
         `- Status: ${session.status}`,
         `- Branch: ${escapeMarkdown(session.branch ?? "not detected")}`,
         `- Directory: \`${session.cwd.replace(/`/g, "\\`")}\``,
@@ -66,6 +68,11 @@ function statusIcon(
   switch (status) {
     case "starting":
       return new vscode.ThemeIcon("sync~spin");
+    case "idle":
+      return new vscode.ThemeIcon(
+        active ? "circle-filled" : "circle-outline",
+        new vscode.ThemeColor("testing.iconPassed"),
+      );
     case "finished":
       return new vscode.ThemeIcon(
         "pass-filled",

@@ -34,7 +34,7 @@ export async function acquireWriterLease(
   label: string,
 ): Promise<LeaseAttempt> {
   const repository = await repositoryIdentity(cwd);
-  const canonicalCwd = await realpath(cwd);
+  const canonicalCwd = await realpath(repository?.root ?? cwd);
   const leaseRoot = repository
     ? nodePath.join(
         await realpath(repository.commonDir),
