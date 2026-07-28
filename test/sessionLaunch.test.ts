@@ -33,6 +33,7 @@ test("work RPC launch uses repository launcher and exact parity", () => {
   assert.ok(plan.parity?.requiredTools.includes("edit"));
   assert.ok(plan.parity?.allowedTools.includes("hub"));
   assert.ok(!plan.parity?.allowedTools.includes("loop_control"));
+  assert.ok(plan.parity?.allowedTools.includes("loop_handoff"));
 });
 
 test("read-only RPC launch excludes mutations", () => {

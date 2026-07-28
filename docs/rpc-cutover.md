@@ -74,7 +74,8 @@ Project launch profiles may attach a parity contract. Dzialkopedia requires:
 - exact active-tool inventory with no undeclared extras;
 - `dzialki_policy_status` present in every profile, proving the repository policy
   extension loaded;
-- work profile: full daily-development tools present and Loop-only custom tools absent;
+- work profile: full daily-development tools plus narrow `loop_handoff`; direct
+  Loop lifecycle and dispatch tools absent;
 - read-only profile: only safe read/navigation tools plus the policy marker;
 - Loop profile: only canonical Loop tools, safe read tools, and the policy marker.
 

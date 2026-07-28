@@ -20,6 +20,7 @@ const WORK_TOOLS = [
   "glob",
   "grep",
   "lsp",
+  "loop_handoff",
   "browser",
   "task",
   "hub",

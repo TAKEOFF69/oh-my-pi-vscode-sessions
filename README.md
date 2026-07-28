@@ -20,33 +20,43 @@ the interface orchestrates sessions while OMP remains the agent runtime.
 ## Workflow
 
 1. Open **OMP Sessions** from the activity bar.
-2. Click **+** for work, **play** for a Loop controller, or lightbulb for read-only.
-3. Pick current workspace or any existing Git worktree.
-4. Work in the new `π …` editor tab with conversation, advisor, tool, retry,
+2. Click **+ New Session**.
+3. Work in the new `π …` editor tab with conversation, advisor, tool, retry,
    compaction, and subagent events rendered directly.
+4. If conversation calls for Loop v2, OMP requests an isolated controller tab
+   automatically through `loop_handoff`.
 5. Repeat. Tabs run concurrently and may be moved into VS Code split groups.
 
 One VS Code window can therefore contain:
 
-- a Loop controller in its clean controller worktree;
-- several implementation sessions in separate worker worktrees;
-- a read-only architecture or brainstorming session;
+- ordinary OMP conversations that can code, research, brainstorm, or plan;
+- Loop controllers opened only when conversation chooses Loop;
+- several implementation sessions in separate worktrees;
 - ordinary source editors alongside all of them.
 
-For a repository exposing `scripts/omp/launch.mjs`, use **New Loop Controller**.
-Pick a clean controller worktree and enter an alias. The extension starts the locked
-RPC profile, checks exact runtime parity, then sends `/loop-start <alias>`.
-Mismatched model, effort, cwd, or tool surface blocks the prompt before the
-controller starts. A second writer cannot claim the same controller directory.
+For Dzialkopedia, standard session exposes narrow `loop_handoff` tool but never
+direct Loop lifecycle or dispatch tools. Once user and Opus decide Loop is right,
+tool opens dedicated controller worktree, starts locked RPC profile, validates exact
+runtime parity, then sends `/loop-start <alias>`. Mismatched model, effort, cwd, or
+tool surface blocks before controller starts.
 
 The rule is **one writing session per worktree**, not one VS Code window per
 worktree. Atomic leases under shared Git directory enforce this across tabs,
 windows, and extension-host restarts; stale process owners are recovered. If
-directory is occupied, use read-only mode or focus/close existing owner.
+**New Session** prepares a fresh isolated worktree from `origin/main` through
+extension-owned Git operations, validates canonical Dzialkopedia adapter before
+launch, then bootstraps local dependencies and environment. Old session worktrees
+are never silently reused, so unfinished parallel work cannot bleed into new
+conversation. Distinct concurrent Loop handoffs receive separate controller
+worktrees, while repeated handoff for same alias focuses one existing controller.
 
-## Read-only sessions
+## Advanced profiles
 
-Read-only tabs start OMP with a restricted tool list:
+Mode selection is not normal startup UX. Read-only, diagnostic TUI, manual Loop,
+and explicit worktree selection remain Command Palette operations for debugging or
+special safety needs.
+
+Advanced read-only tabs start OMP with restricted tool list:
 
 ```text
 read, grep, glob, lsp, inspect_image, browser, web_search, todo
@@ -116,11 +126,7 @@ and no shadow process exist.
 
 ## Commands
 
-- `OMP Sessions: New Work Session`
-- `OMP Sessions: New Work Session in Chosen Worktree…`
-- `OMP Sessions: Open Diagnostic TUI Session`
-- `OMP Sessions: New Read-Only Session`
-- `OMP Sessions: New Loop Controller`
+- `OMP Sessions: New Session`
 - `OMP Sessions: Open Active Session`
 - `OMP Sessions: Restart Session`
 - `OMP Sessions: Rename Session`
@@ -130,16 +136,23 @@ and no shadow process exist.
 - `OMP Sessions: Send Selection to OMP`
 - `OMP Sessions: Send File Path to OMP`
 
-Default shortcut for a new work session:
+Advanced commands:
+
+- `OMP Sessions: Advanced: New Session in Chosen Worktree…`
+- `OMP Sessions: Advanced: Open Diagnostic TUI`
+- `OMP Sessions: Advanced: New Read-Only Session`
+- `OMP Sessions: Advanced: New Loop Controller`
+
+Default shortcut for a new session:
 
 - Windows/Linux: `Ctrl+Shift+Alt+I`
 - macOS: `Cmd+Shift+Alt+I`
 
-Standard session commands are picker-free. Generic projects use current workspace.
-Dzialkopedia uses current eligible `wip/*` checkout or dedicated
-`*-omp-daily-driver` / `*-omp-loop-controller` worktree. Shared `main` is excluded.
-Use **New Work Session in Chosen Worktree…** only when explicit parallel branch
-selection is needed.
+Standard session is picker-free. Generic projects use current workspace.
+Dzialkopedia always creates and bootstraps fresh `*-omp-session-*` worktree from
+`origin/main`; shared `main` is management-only and never receives OMP writer.
+Loop handoff creates fresh `*-omp-loop-session-*` worktree. Existing worktrees are
+opened only through advanced chooser when explicit branch selection is intended.
 
 ## Build and install
 
@@ -149,7 +162,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.0.1.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.1.0.vsix --force
 ```
 
 ## Current boundary

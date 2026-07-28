@@ -58,7 +58,7 @@ describe("planAutomaticDirectory", () => {
     );
   });
 
-  it("skips shared Dzialkopedia main and uses dedicated daily driver", () => {
+  it("skips shared Dzialkopedia main and provisions a fresh writer", () => {
     assert.deepEqual(
       planAutomaticDirectory({
         workspaceRoots: [root],
@@ -68,17 +68,11 @@ describe("planAutomaticDirectory", () => {
         canonicalDzialki: true,
         launcherExists: (cwd) => launcherPaths.has(cwd),
       }),
-      {
-        action: "use",
-        directory: {
-          cwd: daily,
-          branch: "wip/20260728-omp-daily-driver",
-        },
-      },
+      { action: "create", role: "work" },
     );
   });
 
-  it("uses dedicated Loop controller without showing worktree picker", () => {
+  it("provisions a fresh Loop controller without showing worktree picker", () => {
     assert.deepEqual(
       planAutomaticDirectory({
         workspaceRoots: [root],
@@ -88,17 +82,11 @@ describe("planAutomaticDirectory", () => {
         canonicalDzialki: true,
         launcherExists: (cwd) => launcherPaths.has(cwd),
       }),
-      {
-        action: "use",
-        directory: {
-          cwd: loop,
-          branch: "wip/20260728-omp-loop-controller",
-        },
-      },
+      { action: "create", role: "loop" },
     );
   });
 
-  it("reuses writer worktree for read-only but never for another writer", () => {
+  it("reuses writer worktree for read-only and provisions isolation for another writer", () => {
     const readonly = planAutomaticDirectory({
       workspaceRoots: [root],
       worktrees,
@@ -112,7 +100,7 @@ describe("planAutomaticDirectory", () => {
       assert.equal(readonly.directory.cwd, daily);
     }
 
-    assert.equal(
+    assert.deepEqual(
       planAutomaticDirectory({
         workspaceRoots: [root],
         worktrees,
@@ -120,12 +108,51 @@ describe("planAutomaticDirectory", () => {
         kind: "work",
         canonicalDzialki: true,
         launcherExists: (cwd) => launcherPaths.has(cwd),
-      }).action,
-      "choose",
+      }),
+      { action: "create", role: "work" },
     );
   });
 
-  it("prefers current eligible Dzialkopedia worktree over dedicated defaults", () => {
+  it("never silently reuses an idle extension-managed writer worktree", () => {
+    const managed = nodePath.resolve("C:/repo-wt-omp-session-abc");
+    assert.deepEqual(
+      planAutomaticDirectory({
+        workspaceRoots: [root],
+        worktrees: [
+          ...worktrees,
+          {
+            path: managed,
+            branch: "wip/20260728-omp-session-abc",
+            bare: false,
+            detached: false,
+            prunable: false,
+          },
+        ],
+        activeWriterCwds: [daily],
+        kind: "work",
+        canonicalDzialki: true,
+        launcherExists: (cwd) =>
+          launcherPaths.has(cwd) || cwd === managed,
+      }),
+      { action: "create", role: "work" },
+    );
+  });
+
+  it("provisions another controller when dedicated Loop worktree is occupied", () => {
+    assert.deepEqual(
+      planAutomaticDirectory({
+        workspaceRoots: [root],
+        worktrees,
+        activeWriterCwds: [loop],
+        kind: "loop",
+        canonicalDzialki: true,
+        launcherExists: (cwd) => launcherPaths.has(cwd),
+      }),
+      { action: "create", role: "loop" },
+    );
+  });
+
+  it("keeps explicit Dzialkopedia branch selection behind advanced command", () => {
     assert.deepEqual(
       planAutomaticDirectory({
         workspaceRoots: [feature],
@@ -135,13 +162,7 @@ describe("planAutomaticDirectory", () => {
         canonicalDzialki: true,
         launcherExists: (cwd) => launcherPaths.has(cwd),
       }),
-      {
-        action: "use",
-        directory: {
-          cwd: feature,
-          branch: "wip/20260728-feature",
-        },
-      },
+      { action: "create", role: "work" },
     );
   });
 });

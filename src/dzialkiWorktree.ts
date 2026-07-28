@@ -1,0 +1,463 @@
+import {
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import {
+  copyFile,
+  readdir,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import * as nodePath from "node:path";
+
+export type DzialkiWorktreeRole = "work" | "loop";
+
+export type ProvisionedDzialkiWorktree = {
+  cwd: string;
+  branch: string;
+};
+
+type CommandResult = {
+  stdout: string;
+  stderr: string;
+};
+
+type ProvisionOptions = {
+  runGit?: (
+    cwd: string,
+    args: readonly string[],
+  ) => Promise<CommandResult>;
+  suffix?: () => string;
+  dateStamp?: () => string;
+  pathExists?: (candidate: string) => boolean;
+  bootstrap?: (
+    sourceRoot: string,
+    targetRoot: string,
+  ) => Promise<void>;
+  validate?: (
+    worktree: ProvisionedDzialkiWorktree,
+  ) => Promise<void>;
+};
+
+export async function provisionDzialkiWorktree(
+  repositoryRoot: string,
+  role: DzialkiWorktreeRole,
+  options: ProvisionOptions = {},
+): Promise<ProvisionedDzialkiWorktree> {
+  const prefix = role === "loop" ? "omp-loop-session" : "omp-session";
+  const suffix =
+    options.suffix?.() ??
+    `${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
+  if (!/^[a-z0-9][a-z0-9-]{0,31}$/i.test(suffix)) {
+    throw new Error("Generated OMP worktree suffix is invalid");
+  }
+
+  const stamp = options.dateStamp?.() ?? utcDateStamp();
+  const arc = `${prefix}-${suffix}`;
+  const branch = `wip/${stamp}-${arc}`;
+  const cwd = nodePath.join(
+    nodePath.dirname(repositoryRoot),
+    `dzialki-wt-${stamp}-${arc}`,
+  );
+  const pathExists = options.pathExists ?? existsSync;
+  if (pathExists(cwd)) {
+    throw new Error(`Isolated OMP worktree path already exists: ${cwd}`);
+  }
+
+  const runGit = options.runGit ?? runGitCommand;
+  let created = false;
+  try {
+    await runGit(repositoryRoot, ["fetch", "origin", "main"]);
+    const remoteBranch = await runGit(repositoryRoot, [
+      "ls-remote",
+      "--heads",
+      "origin",
+      branch,
+    ]);
+    if (remoteBranch.stdout.trim()) {
+      throw new Error(`Remote OMP worktree branch already exists: ${branch}`);
+    }
+
+    await runGit(repositoryRoot, [
+      "worktree",
+      "add",
+      "-b",
+      branch,
+      cwd,
+      "origin/main",
+    ]);
+    created = true;
+
+    const [actualBranch, head, canonicalHead, status] =
+      await Promise.all([
+        runGit(cwd, ["branch", "--show-current"]),
+        runGit(cwd, ["rev-parse", "HEAD"]),
+        runGit(cwd, ["rev-parse", "origin/main"]),
+        runGit(cwd, [
+          "status",
+          "--porcelain",
+          "--untracked-files=no",
+        ]),
+      ]);
+    if (
+      actualBranch.stdout.trim() !== branch ||
+      head.stdout.trim() !== canonicalHead.stdout.trim() ||
+      status.stdout.trim()
+    ) {
+      throw new Error(
+        "Fresh OMP worktree did not match clean origin/main",
+      );
+    }
+
+    const worktree = { cwd, branch };
+    await options.validate?.(worktree);
+    await runGit(cwd, ["config", "core.hooksPath", ".githooks"]);
+    await (options.bootstrap ?? bootstrapWorktree)(
+      repositoryRoot,
+      cwd,
+    );
+    return worktree;
+  } catch (error) {
+    if (created) {
+      try {
+        await cleanupFailedProvision(
+          repositoryRoot,
+          cwd,
+          branch,
+          runGit,
+        );
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "OMP worktree provisioning failed and exact cleanup could not be completed",
+        );
+      }
+    }
+    throw error;
+  }
+}
+
+async function bootstrapWorktree(
+  sourceRoot: string,
+  targetRoot: string,
+): Promise<void> {
+  for (const relative of [
+    "node_modules",
+    nodePath.join("apps", "web", "node_modules"),
+  ]) {
+    const source = nodePath.join(sourceRoot, relative);
+    const target = nodePath.join(targetRoot, relative);
+    if (!existsSync(source) || existsSync(target)) {
+      continue;
+    }
+    await symlink(
+      source,
+      target,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  }
+
+  for (const relative of ["", nodePath.join("apps", "web")]) {
+    const sourceDirectory = nodePath.join(sourceRoot, relative);
+    if (!existsSync(sourceDirectory)) {
+      continue;
+    }
+    const entries = await readdir(sourceDirectory, {
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.startsWith(".env")) {
+        continue;
+      }
+      await copyFile(
+        nodePath.join(sourceDirectory, entry.name),
+        nodePath.join(targetRoot, relative, entry.name),
+      );
+    }
+  }
+
+  await writeFile(
+    nodePath.join(targetRoot, ".agent-alive"),
+    new Date().toISOString(),
+  );
+}
+
+async function cleanupFailedProvision(
+  repositoryRoot: string,
+  cwd: string,
+  branch: string,
+  runGit: (
+    cwd: string,
+    args: readonly string[],
+  ) => Promise<CommandResult>,
+): Promise<void> {
+  const [actualBranch, head, canonicalHead, status] =
+    await Promise.all([
+    runGit(cwd, ["branch", "--show-current"]),
+    runGit(cwd, ["rev-parse", "HEAD"]),
+    runGit(cwd, ["rev-parse", "origin/main"]),
+    runGit(cwd, [
+      "status",
+      "--porcelain",
+    ]),
+  ]);
+  if (
+    actualBranch.stdout.trim() !== branch ||
+    head.stdout.trim() !== canonicalHead.stdout.trim() ||
+    status.stdout.trim()
+  ) {
+    throw new Error(
+      "Refused cleanup because failed OMP worktree changed after creation",
+    );
+  }
+  await runGit(repositoryRoot, [
+    "worktree",
+    "remove",
+    cwd,
+  ]);
+  await runGit(repositoryRoot, [
+    "update-ref",
+    "-d",
+    `refs/heads/${branch}`,
+    head.stdout.trim(),
+  ]);
+}
+
+function utcDateStamp(): string {
+  return new Date().toISOString().slice(0, 10).replaceAll("-", "");
+}
+
+function runGitCommand(
+  cwd: string,
+  args: readonly string[],
+): Promise<CommandResult> {
+  return new Promise((resolve, reject) => {
+    const child: ChildProcessWithoutNullStreams = spawn(
+      "git",
+      ["-C", cwd, ...args],
+      {
+        cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+        detached: process.platform !== "win32",
+      },
+    );
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    let outputExceeded = false;
+    let termination: Promise<void> | undefined;
+
+    const finish = (
+      callback: () => void,
+    ): void => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        callback();
+      }
+    };
+    const append = (
+      current: string,
+      chunk: Buffer,
+    ): string => {
+      const next = current + chunk.toString("utf8");
+      if (next.length > 4 * 1024 * 1024) {
+        if (!outputExceeded) {
+          outputExceeded = true;
+          termination ??= terminateProcessTree(child);
+          void termination.then(
+            () => {
+              finish(() =>
+                reject(new Error("Git command exceeded output limit")),
+              );
+            },
+            (error) => {
+              finish(() =>
+                reject(
+                  error instanceof Error
+                    ? error
+                    : new Error(String(error)),
+                ),
+              );
+            },
+          );
+        }
+        return current;
+      }
+      return next;
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout = append(stdout, chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = append(stderr, chunk);
+    });
+    child.once("error", (error) => {
+      finish(() => reject(error));
+    });
+    child.once("close", (code, signal) => {
+      void (async () => {
+        if (termination) {
+          await termination;
+        }
+        finish(() => {
+          if (timedOut) {
+            reject(
+              new Error(
+                "Git command timed out after process tree was reaped",
+              ),
+            );
+          } else if (code !== 0) {
+            const detail = (stderr || stdout).trim().slice(0, 800);
+            reject(
+              new Error(
+                detail ||
+                  `Git command exited ${String(code)}${signal ? ` (${signal})` : ""}`,
+              ),
+            );
+          } else {
+            resolve({ stdout, stderr });
+          }
+        });
+      })().catch((error) => {
+        finish(() =>
+          reject(
+            error instanceof Error ? error : new Error(String(error)),
+          ),
+        );
+      });
+    });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      termination ??= terminateProcessTree(child);
+      void termination.catch((error) => {
+        finish(() =>
+          reject(
+            error instanceof Error ? error : new Error(String(error)),
+          ),
+        );
+      });
+    }, 120_000);
+  });
+}
+
+async function terminateProcessTree(
+  child: ChildProcessWithoutNullStreams,
+): Promise<void> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  if (process.platform === "win32") {
+    const killer = spawn(
+      "taskkill.exe",
+      ["/pid", String(child.pid), "/t", "/f"],
+      { stdio: "ignore", windowsHide: true },
+    );
+    const killed = await waitForClose(killer, 5_000);
+    if (
+      killed !== 0 &&
+      child.exitCode === null &&
+      child.signalCode === null
+    ) {
+      throw new Error(`Could not terminate Git process tree ${child.pid}`);
+    }
+    if (!(await waitForExit(child, 5_000))) {
+      throw new Error(`Could not reap Git process tree ${child.pid}`);
+    }
+    return;
+  }
+
+  signalGroup(child.pid, "SIGTERM");
+  if (!(await waitForGroupExit(child.pid, 3_000))) {
+    signalGroup(child.pid, "SIGKILL");
+    if (!(await waitForGroupExit(child.pid, 5_000))) {
+      throw new Error(`Could not reap Git process group ${child.pid}`);
+    }
+  }
+  if (!(await waitForExit(child, 1_000))) {
+    throw new Error(`Could not reap Git root process ${child.pid}`);
+  }
+}
+
+function signalGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+      throw error;
+    }
+  }
+}
+
+async function waitForGroupExit(
+  pid: number,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(-pid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+        return true;
+      }
+    }
+    await delay(50);
+  }
+  return false;
+}
+
+function waitForExit(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.off("exit", onExit);
+      resolve(false);
+    }, timeoutMs);
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    child.once("exit", onExit);
+  });
+}
+
+function waitForClose(
+  child: ReturnType<typeof spawn>,
+  timeoutMs: number,
+): Promise<number | null> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(child.exitCode);
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Process terminator timed out"));
+    }, timeoutMs);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}

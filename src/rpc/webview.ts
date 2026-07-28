@@ -328,7 +328,7 @@ function renderRail(): void {
   requireElement("session-name").textContent =
     state.runtime.sessionName ||
     state.runtime.branch ||
-    `${state.runtime.kind || "OMP"} session`;
+    "OMP session";
   requireElement("session-path").textContent = [
     state.runtime.branch,
     state.runtime.cwd,
@@ -437,7 +437,7 @@ function renderEmpty(): string {
       ? "Loop controller"
       : state.runtime.kind === "readonly"
         ? "Read-only session"
-        : "Work session";
+        : "OMP session";
   return `
     <section class="empty-state">
       <div class="empty-card">

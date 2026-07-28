@@ -4,6 +4,7 @@ import * as nodePath from "node:path";
 
 import * as vscode from "vscode";
 
+import { extractLoopHandoffAlias } from "../loopHandoff";
 import type { SessionLogger } from "../logging";
 import type { SessionStatus } from "../sessions/SessionPanel";
 import type { SessionHost } from "../sessions/SessionHost";
@@ -39,6 +40,7 @@ export type RpcSessionHostOptions = {
   logger: SessionLogger;
   onStatusChange: (status: SessionStatus) => void;
   onTitleChange: (title: string) => void;
+  onLoopHandoff: (alias: string) => void | Promise<void>;
 };
 
 export class RpcSessionHost implements SessionHost {
@@ -54,6 +56,7 @@ export class RpcSessionHost implements SessionHost {
   readonly #logger: SessionLogger;
   readonly #onStatusChange: (status: SessionStatus) => void;
   readonly #onTitleChange: (title: string) => void;
+  readonly #onLoopHandoff: (alias: string) => void | Promise<void>;
   #label: string;
   #rpc: RpcProcess | undefined;
   #disposed = false;
@@ -66,6 +69,7 @@ export class RpcSessionHost implements SessionHost {
   #preParityFrames: RpcFrame[] = [];
   #preParityBytes = 0;
   #promptSequence = 0;
+  readonly #handledLoopHandoffs = new Set<string>();
   readonly #promptLifecycle = new PromptLifecycle();
   readonly #teardownBarrier = new TeardownBarrier();
   #restartPromise: Promise<void> | undefined;
@@ -86,6 +90,7 @@ export class RpcSessionHost implements SessionHost {
     this.#logger = options.logger;
     this.#onStatusChange = options.onStatusChange;
     this.#onTitleChange = options.onTitleChange;
+    this.#onLoopHandoff = options.onLoopHandoff;
 
     this.#webview.options = {
       enableScripts: true,
@@ -526,6 +531,9 @@ export class RpcSessionHost implements SessionHost {
       case "extension_ui_request":
         void this.#handleExtensionUiRequest(frame);
         break;
+      case "tool_execution_end":
+        this.#handleLoopHandoff(frame);
+        break;
       case "session_info_update": {
         const title =
           typeof frame.title === "string" ? frame.title.trim() : "";
@@ -536,6 +544,29 @@ export class RpcSessionHost implements SessionHost {
         break;
       }
     }
+  }
+
+  #handleLoopHandoff(frame: RpcFrame): void {
+    const alias = extractLoopHandoffAlias(frame);
+    const toolCallId =
+      typeof frame.toolCallId === "string" ? frame.toolCallId : "";
+    if (
+      !alias ||
+      !toolCallId ||
+      this.#kind !== "work" ||
+      this.#parity?.name !== "dzialki-work" ||
+      !this.#parityPassed ||
+      this.#handledLoopHandoffs.has(toolCallId)
+    ) {
+      return;
+    }
+    this.#handledLoopHandoffs.add(toolCallId);
+    this.#logger.info(
+      `Validated Loop handoff "${alias}" from "${this.#label}"`,
+    );
+    void Promise.resolve(this.#onLoopHandoff(alias)).catch((error) => {
+      this.#logger.error(`Loop handoff "${alias}" failed`, error);
+    });
   }
 
   async #handleExtensionUiRequest(frame: RpcFrame): Promise<void> {

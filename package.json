@@ -2,7 +2,7 @@
   "name": "oh-my-pi-vscode-sessions",
   "displayName": "Oh My Pi Sessions",
   "description": "Run concurrent structured Oh My Pi RPC sessions in native VS Code editor tabs, each bound to its own folder or Git worktree.",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",
@@ -68,7 +68,7 @@
     "viewsWelcome": [
       {
         "view": "ohMyPiSessions.sessions",
-        "contents": "Run multiple independent structured OMP sessions as native editor tabs.\n[New work session](command:ohMyPiSessions.newSession)\n[New Loop controller](command:ohMyPiSessions.newLoopSession)\n[New read-only session](command:ohMyPiSessions.newReadOnlySession)\n[Open diagnostic TUI](command:ohMyPiSessions.newTerminalSession)",
+        "contents": "Start OMP and decide what to do in conversation.\n[New session](command:ohMyPiSessions.newSession)",
         "when": "!ohMyPiSessions.hasSessions"
       }
     ],
@@ -81,31 +81,31 @@
       },
       {
         "command": "ohMyPiSessions.newSession",
-        "title": "New Work Session",
+        "title": "New Session",
         "category": "OMP Sessions",
         "icon": "$(add)"
       },
       {
         "command": "ohMyPiSessions.newSessionInWorktree",
-        "title": "New Work Session in Chosen Worktree…",
+        "title": "Advanced: New Session in Chosen Worktree…",
         "category": "OMP Sessions",
         "icon": "$(folder-opened)"
       },
       {
         "command": "ohMyPiSessions.newTerminalSession",
-        "title": "Open Diagnostic TUI Session",
+        "title": "Advanced: Open Diagnostic TUI",
         "category": "OMP Sessions",
         "icon": "$(terminal)"
       },
       {
         "command": "ohMyPiSessions.newReadOnlySession",
-        "title": "New Read-Only Session",
+        "title": "Advanced: New Read-Only Session",
         "category": "OMP Sessions",
         "icon": "$(lightbulb)"
       },
       {
         "command": "ohMyPiSessions.newLoopSession",
-        "title": "New Loop Controller",
+        "title": "Advanced: New Loop Controller",
         "category": "OMP Sessions",
         "icon": "$(play-circle)"
       },
@@ -178,29 +178,9 @@
           "group": "navigation@1"
         },
         {
-          "command": "ohMyPiSessions.newReadOnlySession",
-          "when": "view == ohMyPiSessions.sessions",
-          "group": "navigation@3"
-        },
-        {
-          "command": "ohMyPiSessions.newLoopSession",
-          "when": "view == ohMyPiSessions.sessions",
-          "group": "navigation@2"
-        },
-        {
           "command": "ohMyPiSessions.closeAll",
           "when": "view == ohMyPiSessions.sessions && ohMyPiSessions.hasSessions",
-          "group": "navigation@4"
-        },
-        {
-          "command": "ohMyPiSessions.showLogs",
-          "when": "view == ohMyPiSessions.sessions",
-          "group": "navigation@5"
-        },
-        {
-          "command": "ohMyPiSessions.newTerminalSession",
-          "when": "view == ohMyPiSessions.sessions",
-          "group": "navigation@6"
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [

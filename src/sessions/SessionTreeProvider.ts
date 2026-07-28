@@ -31,17 +31,20 @@ export class SessionTreeProvider
         : session.kind === "loop"
           ? `${branch} · Loop ${transport} · ${session.status}`
           : `${branch} · ${transport} · ${session.status}`;
-    item.tooltip = new vscode.MarkdownString(
-      [
-        `**${escapeMarkdown(session.label)}**`,
-        "",
-        `- Mode: ${session.kind === "readonly" ? "read-only" : session.kind === "loop" ? "Loop controller" : "work"}`,
-        `- Surface: ${transport}`,
-        `- Status: ${session.status}`,
-        `- Branch: ${escapeMarkdown(session.branch ?? "not detected")}`,
-        `- Directory: \`${session.cwd.replace(/`/g, "\\`")}\``,
-      ].join("\n"),
-    );
+    const tooltip = [
+      `**${escapeMarkdown(session.label)}**`,
+      "",
+      ...(session.kind === "work"
+        ? []
+        : [
+            `- Advanced profile: ${session.kind === "readonly" ? "read-only" : "Loop controller"}`,
+          ]),
+      `- Surface: ${transport}`,
+      `- Status: ${session.status}`,
+      `- Branch: ${escapeMarkdown(session.branch ?? "not detected")}`,
+      `- Directory: \`${session.cwd.replace(/`/g, "\\`")}\``,
+    ];
+    item.tooltip = new vscode.MarkdownString(tooltip.join("\n"));
     item.iconPath = statusIcon(session.status, session.active);
     item.contextValue = "ohMyPiSession";
     item.command = {
