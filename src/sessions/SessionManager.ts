@@ -13,7 +13,13 @@ import type { SessionLogger } from "../logging";
 import {
   canonicalDzialkiOrigin,
   detectProjectLauncher,
+  type ProjectLauncher,
 } from "../projectLauncher";
+import { provisionDzialkiWorktree } from "../dzialkiWorktree";
+import {
+  LoopHandoffSingleFlight,
+  sameLoopAlias,
+} from "../loopHandoff";
 import { planAutomaticDirectory } from "../sessionDirectory";
 import {
   listGitWorktrees,
@@ -53,6 +59,11 @@ export class SessionManager implements vscode.Disposable {
   #sessions: SessionPanel[] = [];
   #active: SessionPanel | undefined;
   #writerLeases = new Map<string, WriterLease>();
+  #validatedLaunchers = new Map<string, ProjectLauncher>();
+  #creationQueue: Promise<void> = Promise.resolve();
+  #loopHandoffs =
+    new LoopHandoffSingleFlight<SessionPanel | undefined>();
+  #acceptingSessions = true;
   #shutdownPromise: Promise<void> | undefined;
 
   constructor(extensionUri: vscode.Uri, logger: SessionLogger) {
@@ -68,13 +79,71 @@ export class SessionManager implements vscode.Disposable {
     return this.#active;
   }
 
-  async newSession(
+  newSession(
     kind: SessionKind = "work",
     transport: SessionTransport = "rpc",
     directoryMode: DirectoryMode = "auto",
     requestedLoopAlias?: string,
   ): Promise<SessionPanel | undefined> {
+    if (!this.#acceptingSessions) {
+      return Promise.resolve(undefined);
+    }
+    const opening = this.#creationQueue.then(() =>
+      this.#createSession(
+        kind,
+        transport,
+        directoryMode,
+        requestedLoopAlias,
+      ),
+    );
+    this.#creationQueue = opening.then(
+      () => undefined,
+      () => undefined,
+    );
+    return opening;
+  }
+
+  async #createSession(
+    kind: SessionKind,
+    transport: SessionTransport,
+    directoryMode: DirectoryMode,
+    requestedLoopAlias?: string,
+  ): Promise<SessionPanel | undefined> {
     this.#logger.info(`New ${kind} ${transport} session requested`);
+    let loopAlias = requestedLoopAlias?.trim();
+    if (kind === "loop") {
+      if (
+        loopAlias &&
+        !/^[a-z0-9][a-z0-9-]{0,63}$/i.test(loopAlias)
+      ) {
+        await vscode.window.showErrorMessage(
+          "OMP Sessions: Loop alias must use only letters, numbers, and hyphens.",
+        );
+        return undefined;
+      }
+      loopAlias ??= await vscode.window.showInputBox({
+        title: "Loop v2 alias",
+        prompt: "Tracked start alias passed to npm run omp:loop",
+        validateInput: (value) =>
+          /^[a-z0-9][a-z0-9-]{0,63}$/i.test(value.trim())
+            ? undefined
+            : "Use one simple alias (letters, numbers, hyphens)",
+      });
+      if (!loopAlias) {
+        return undefined;
+      }
+      loopAlias = loopAlias.trim();
+      const existing = this.#sessions.find(
+        (session) =>
+          session.kind === "loop" &&
+          sameLoopAlias(session.loopAlias, loopAlias as string),
+      );
+      if (existing) {
+        existing.reveal();
+        return existing;
+      }
+    }
+
     const directory =
       directoryMode === "choose"
         ? await this.#pickDirectory()
@@ -89,7 +158,10 @@ export class SessionManager implements vscode.Disposable {
 
     let projectLauncher;
     try {
-      projectLauncher = await detectProjectLauncher(directory.cwd);
+      const key = normalizedKey(directory.cwd);
+      projectLauncher = this.#validatedLaunchers.get(key);
+      this.#validatedLaunchers.delete(key);
+      projectLauncher ??= await detectProjectLauncher(directory.cwd);
     } catch (error) {
       await vscode.window.showErrorMessage(
         `OMP Sessions: ${
@@ -177,31 +249,6 @@ export class SessionManager implements vscode.Disposable {
     }
     resolvedKind = finalSafety.kind;
 
-    let loopAlias = requestedLoopAlias?.trim();
-    if (resolvedKind === "loop") {
-      if (
-        loopAlias &&
-        !/^[a-z0-9][a-z0-9-]{0,63}$/i.test(loopAlias)
-      ) {
-        await vscode.window.showErrorMessage(
-          "OMP Sessions: Loop alias must use only letters, numbers, and hyphens.",
-        );
-        return undefined;
-      }
-      loopAlias ??= await vscode.window.showInputBox({
-          title: "Loop v2 alias",
-          prompt: "Tracked start alias passed to npm run omp:loop",
-          validateInput: (value) =>
-            /^[a-z0-9][a-z0-9-]{0,63}$/i.test(value.trim())
-              ? undefined
-              : "Use one simple alias (letters, numbers, hyphens)",
-        });
-      if (!loopAlias) {
-        return undefined;
-      }
-      loopAlias = loopAlias.trim();
-    }
-
     const baseLabel =
       loopAlias ??
       directory.branch ??
@@ -247,6 +294,7 @@ export class SessionManager implements vscode.Disposable {
     const spec: SessionSpec = {
       id: crypto.randomUUID(),
       label,
+      ...(loopAlias ? { loopAlias } : {}),
       cwd: directory.cwd,
       branch: directory.branch,
       kind: resolvedKind,
@@ -291,22 +339,22 @@ export class SessionManager implements vscode.Disposable {
     const existing = this.#sessions.find(
       (session) =>
         session.kind === "loop" &&
-        session.label.toLowerCase() === alias.toLowerCase(),
+        sameLoopAlias(session.loopAlias, alias),
     );
     if (existing) {
       existing.reveal();
       return;
     }
-    this.#logger.info(
-      `Opening isolated Loop controller "${alias}" from "${source.label}"`,
-    );
-    const opened = await this.newSession(
-      "loop",
-      "rpc",
-      "auto",
-      alias,
-    );
-    if (opened) {
+    const flight = this.#loopHandoffs.joinOrStart(alias, () => {
+      this.#logger.info(
+        `Opening isolated Loop controller "${alias}" from "${source.label}"`,
+      );
+      return this.newSession("loop", "rpc", "auto", alias);
+    });
+    const opened = await flight.promise;
+    if (!flight.started) {
+      opened?.reveal();
+    } else if (opened) {
       await vscode.window.showInformationMessage(
         `Loop "${alias}" opened in isolated controller tab.`,
       );
@@ -400,7 +448,9 @@ export class SessionManager implements vscode.Disposable {
 
   shutdown(): Promise<void> {
     if (!this.#shutdownPromise) {
+      this.#acceptingSessions = false;
       this.#shutdownPromise = (async () => {
+        await this.#creationQueue;
         await this.closeAll();
         this.tree.dispose();
       })();
@@ -460,6 +510,57 @@ export class SessionManager implements vscode.Disposable {
         `Automatic ${kind} directory: ${plan.directory.cwd}`,
       );
       return plan.directory;
+    }
+    if (plan.action === "create") {
+      const managementRoot =
+        worktrees.find(
+          (worktree) => worktree.branch === "main",
+        )?.path ?? identity?.root;
+      if (!managementRoot) {
+        await vscode.window.showErrorMessage(
+          "OMP Sessions: Could not locate canonical Dzialkopedia checkout for isolated session.",
+        );
+        return undefined;
+      }
+      try {
+        let validatedLauncher: ProjectLauncher | undefined;
+        const created = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Window,
+            title: "Preparing isolated OMP session",
+          },
+          () =>
+            provisionDzialkiWorktree(managementRoot, plan.role, {
+              validate: async (worktree) => {
+                validatedLauncher = await detectProjectLauncher(
+                  worktree.cwd,
+                );
+                if (!validatedLauncher) {
+                  throw new Error(
+                    "Fresh Dzialkopedia worktree has no canonical launcher",
+                  );
+                }
+              },
+            }),
+        );
+        if (validatedLauncher) {
+          this.#validatedLaunchers.set(
+            normalizedKey(created.cwd),
+            validatedLauncher,
+          );
+        }
+        this.#logger.info(
+          `Created isolated ${plan.role} worktree ${created.cwd} (${created.branch})`,
+        );
+        return created;
+      } catch (error) {
+        await vscode.window.showErrorMessage(
+          `OMP Sessions: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return undefined;
+      }
     }
 
     const choice = await vscode.window.showWarningMessage(

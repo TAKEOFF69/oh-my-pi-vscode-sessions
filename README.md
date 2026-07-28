@@ -43,7 +43,12 @@ tool surface blocks before controller starts.
 The rule is **one writing session per worktree**, not one VS Code window per
 worktree. Atomic leases under shared Git directory enforce this across tabs,
 windows, and extension-host restarts; stale process owners are recovered. If
-directory is occupied, use read-only mode or focus/close existing owner.
+**New Session** prepares a fresh isolated worktree from `origin/main` through
+extension-owned Git operations, validates canonical Dzialkopedia adapter before
+launch, then bootstraps local dependencies and environment. Old session worktrees
+are never silently reused, so unfinished parallel work cannot bleed into new
+conversation. Distinct concurrent Loop handoffs receive separate controller
+worktrees, while repeated handoff for same alias focuses one existing controller.
 
 ## Advanced profiles
 
@@ -144,10 +149,10 @@ Default shortcut for a new session:
 - macOS: `Cmd+Shift+Alt+I`
 
 Standard session is picker-free. Generic projects use current workspace.
-Dzialkopedia uses current eligible `wip/*` checkout or dedicated
-`*-omp-daily-driver` worktree. Shared `main` is excluded. Loop handoff uses
-dedicated `*-omp-loop-controller`. Use advanced chooser only when explicit parallel
-branch selection is needed.
+Dzialkopedia always creates and bootstraps fresh `*-omp-session-*` worktree from
+`origin/main`; shared `main` is management-only and never receives OMP writer.
+Loop handoff creates fresh `*-omp-loop-session-*` worktree. Existing worktrees are
+opened only through advanced chooser when explicit branch selection is intended.
 
 ## Build and install
 

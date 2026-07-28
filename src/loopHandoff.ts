@@ -25,6 +25,38 @@ export function extractLoopHandoffAlias(
     : undefined;
 }
 
+export function sameLoopAlias(
+  stored: string | undefined,
+  requested: string,
+): boolean {
+  return stored?.toLowerCase() === requested.toLowerCase();
+}
+
+export class LoopHandoffSingleFlight<T> {
+  readonly #pending = new Map<string, Promise<T>>();
+
+  joinOrStart(
+    alias: string,
+    start: () => Promise<T>,
+  ): { promise: Promise<T>; started: boolean } {
+    const key = alias.toLowerCase();
+    const pending = this.#pending.get(key);
+    if (pending) {
+      return { promise: pending, started: false };
+    }
+
+    const promise = Promise.resolve().then(start);
+    this.#pending.set(key, promise);
+    const clear = (): void => {
+      if (this.#pending.get(key) === promise) {
+        this.#pending.delete(key);
+      }
+    };
+    void promise.then(clear, clear);
+    return { promise, started: true };
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

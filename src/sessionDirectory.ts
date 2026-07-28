@@ -15,6 +15,10 @@ export type AutomaticDirectoryPlan =
       directory: SessionDirectory;
     }
   | {
+      action: "create";
+      role: "work" | "loop";
+    }
+  | {
       action: "choose";
       reason: string;
     };
@@ -71,18 +75,11 @@ export function planAutomaticDirectory(
     );
 
   if (input.kind === "loop") {
-    const controller = eligible.find(
-      (worktree) =>
-        isDedicatedBranch(worktree.branch, "omp-loop-controller") &&
-        !hasWriter(worktree.path),
-    );
-    return controller
-      ? { action: "use", directory: toDirectory(controller) }
-      : {
-          action: "choose",
-          reason:
-            "No available dedicated Loop controller worktree was found.",
-        };
+    return { action: "create", role: "loop" };
+  }
+
+  if (input.kind === "work") {
+    return { action: "create", role: "work" };
   }
 
   const currentEligible = eligible.find((worktree) =>
@@ -115,7 +112,7 @@ export function planAutomaticDirectory(
   const daily = eligible.find(
     (worktree) =>
       isDedicatedBranch(worktree.branch, "omp-daily-driver") &&
-      (input.kind === "readonly" || !hasWriter(worktree.path)),
+      !hasWriter(worktree.path),
   );
   if (daily) {
     return {
@@ -126,10 +123,7 @@ export function planAutomaticDirectory(
 
   return {
     action: "choose",
-    reason:
-      input.kind === "readonly"
-        ? "No trusted Dzialkopedia OMP worktree is available."
-        : "No writer-safe Dzialkopedia OMP worktree is available.",
+    reason: "No trusted Dzialkopedia OMP worktree is available.",
   };
 }
 

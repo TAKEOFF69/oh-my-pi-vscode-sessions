@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer compete as startup buttons.
 - Normal Dzialkopedia session can request isolated Loop controller during conversation
   through validated `loop_handoff` result.
+- Every **New Session** click provisions fresh canonical isolated Dzialkopedia
+  worktree through extension-owned Git operations instead of executing local
+  repository lifecycle scripts or reopening worktree picker.
+- Loop aliases remain immutable across dynamic title changes, and same-alias
+  handoffs are serialized to one controller.
 - Read-only, diagnostic TUI, manual Loop, and chosen-worktree launches remain advanced
   Command Palette operations.
 - Normal session labels no longer present internal Work mode as user-facing choice.

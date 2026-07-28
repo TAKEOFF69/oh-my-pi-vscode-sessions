@@ -18,6 +18,7 @@ export type SessionStatus =
 export type SessionSpec = {
   id: string;
   label: string;
+  loopAlias?: string;
   cwd: string;
   branch?: string;
   kind: SessionKind;
@@ -143,6 +144,10 @@ export class SessionPanel implements vscode.Disposable {
 
   get label(): string {
     return this.#spec.label;
+  }
+
+  get loopAlias(): string | undefined {
+    return this.#spec.loopAlias;
   }
 
   get cwd(): string {
