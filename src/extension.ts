@@ -27,6 +27,10 @@ export function activate(context: vscode.ExtensionContext): void {
       manager.newSession("work"),
     ),
     vscode.commands.registerCommand(
+      "ohMyPiSessions.newSessionInWorktree",
+      () => manager.newSession("work", "rpc", "choose"),
+    ),
+    vscode.commands.registerCommand(
       "ohMyPiSessions.newTerminalSession",
       () => manager.newSession("readonly", "terminal"),
     ),
