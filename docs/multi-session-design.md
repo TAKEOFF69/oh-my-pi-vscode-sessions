@@ -58,7 +58,7 @@ Included:
 
 - concurrent native editor tabs;
 - active-session sidebar;
-- existing-worktree picker;
+- picker-free current/dedicated-worktree default plus explicit advanced picker;
 - atomic cross-process writer leases with stale-PID recovery;
 - read-only brainstorming profile;
 - repository-owned Loop controller profile;

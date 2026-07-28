@@ -2,7 +2,7 @@
   "name": "oh-my-pi-vscode-sessions",
   "displayName": "Oh My Pi Sessions",
   "description": "Run concurrent structured Oh My Pi RPC sessions in native VS Code editor tabs, each bound to its own folder or Git worktree.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",
@@ -35,6 +35,7 @@
     "onView:ohMyPiSessions.sessions",
     "onCommand:ohMyPiSessions.open",
     "onCommand:ohMyPiSessions.newSession",
+    "onCommand:ohMyPiSessions.newSessionInWorktree",
     "onCommand:ohMyPiSessions.newTerminalSession",
     "onCommand:ohMyPiSessions.newReadOnlySession",
     "onCommand:ohMyPiSessions.newLoopSession",
@@ -83,6 +84,12 @@
         "title": "New Work Session",
         "category": "OMP Sessions",
         "icon": "$(add)"
+      },
+      {
+        "command": "ohMyPiSessions.newSessionInWorktree",
+        "title": "New Work Session in Chosen Worktree…",
+        "category": "OMP Sessions",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "ohMyPiSessions.newTerminalSession",

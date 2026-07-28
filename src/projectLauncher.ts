@@ -85,7 +85,9 @@ export async function detectProjectLauncher(
     "launch.mjs",
   );
   if (!(options.pathExists ?? existsSync)(launcher)) {
-    throw new Error("Dzialkopedia canonical launcher is missing");
+    throw new Error(
+      "Selected Dzialkopedia checkout has no canonical launcher. Shared or stale main is unsupported; choose a current wip/* worktree created from origin/main.",
+    );
   }
   const matches = await (
     options.launcherMatchesCanonical ?? launcherMatchesCanonicalMain

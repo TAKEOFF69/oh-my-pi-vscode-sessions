@@ -45,7 +45,7 @@ test("trusted selected worktree launcher outranks lobby workspace settings", asy
         }),
         launcherMatchesCanonical: async () => false,
       }),
-    /canonical launcher/,
+    /no canonical launcher.*wip\/\*/,
   );
 });
 

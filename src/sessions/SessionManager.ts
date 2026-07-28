@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { existsSync } from "node:fs";
 import * as nodePath from "node:path";
 
 import * as vscode from "vscode";
@@ -9,9 +10,14 @@ import {
   resolveWorkingDirectory,
 } from "../config";
 import type { SessionLogger } from "../logging";
-import { detectProjectLauncher } from "../projectLauncher";
+import {
+  canonicalDzialkiOrigin,
+  detectProjectLauncher,
+} from "../projectLauncher";
+import { planAutomaticDirectory } from "../sessionDirectory";
 import {
   listGitWorktrees,
+  repositoryIdentity,
   sameDirectory,
   type GitWorktree,
 } from "../worktrees";
@@ -38,6 +44,8 @@ type DirectoryChoice = vscode.QuickPickItem & {
   browse?: boolean;
 };
 
+type DirectoryMode = "auto" | "choose";
+
 export class SessionManager implements vscode.Disposable {
   readonly tree = new SessionTreeProvider();
   readonly #extensionUri: vscode.Uri;
@@ -63,9 +71,13 @@ export class SessionManager implements vscode.Disposable {
   async newSession(
     kind: SessionKind = "work",
     transport: SessionTransport = "rpc",
+    directoryMode: DirectoryMode = "auto",
   ): Promise<SessionPanel | undefined> {
     this.#logger.info(`New ${kind} ${transport} session requested`);
-    const directory = await this.#pickDirectory();
+    const directory =
+      directoryMode === "choose"
+        ? await this.#pickDirectory()
+        : await this.#automaticDirectory(kind);
     if (!directory) {
       this.#logger.info(`New ${kind} session cancelled before directory selection`);
       return undefined;
@@ -381,33 +393,49 @@ export class SessionManager implements vscode.Disposable {
       return cwd ? { cwd } : undefined;
     }
 
-    return selected.cwd ? { cwd: selected.cwd, branch: selected.branch } : undefined;
+    return selected.cwd
+      ? { cwd: selected.cwd, branch: selected.branch }
+      : undefined;
+  }
+
+  async #automaticDirectory(
+    kind: SessionKind,
+  ): Promise<{ cwd: string; branch?: string } | undefined> {
+    const roots = this.#workspaceRoots();
+    const worktrees = await this.#discoverWorktrees(roots);
+    const identity = await repositoryIdentity(roots[0]);
+    const plan = planAutomaticDirectory({
+      workspaceRoots: roots,
+      worktrees,
+      activeWriterCwds: this.#sessions
+        .filter((session) => session.kind !== "readonly")
+        .map((session) => session.cwd),
+      kind,
+      canonicalDzialki: canonicalDzialkiOrigin(identity?.origin),
+      launcherExists: (cwd) =>
+        existsSync(nodePath.join(cwd, "scripts", "omp", "launch.mjs")),
+    });
+    if (plan.action === "use") {
+      this.#logger.info(
+        `Automatic ${kind} directory: ${plan.directory.cwd}`,
+      );
+      return plan.directory;
+    }
+
+    const choice = await vscode.window.showWarningMessage(
+      `OMP Sessions: ${plan.reason} Shared Dzialkopedia main is intentionally excluded. Create a worktree with "npm run agent:start -- <arc>", or choose an existing worktree.`,
+      "Choose worktree",
+    );
+    return choice === "Choose worktree"
+      ? this.#pickDirectory()
+      : undefined;
   }
 
   async #directoryChoices(): Promise<DirectoryChoice[]> {
-    const roots =
-      vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ??
-      [resolveWorkingDirectory()];
-    const worktrees = new Map<string, GitWorktree>();
+    const roots = this.#workspaceRoots();
+    const worktrees = await this.#discoverWorktrees(roots);
 
-    for (const root of roots) {
-      const discovered = await listGitWorktrees(root);
-      if (discovered.length === 0) {
-        worktrees.set(normalizedKey(root), {
-          path: root,
-          bare: false,
-          detached: false,
-          prunable: false,
-        });
-      }
-      for (const worktree of discovered) {
-        if (!worktree.bare && !worktree.prunable) {
-          worktrees.set(normalizedKey(worktree.path), worktree);
-        }
-      }
-    }
-
-    const choices = [...worktrees.values()]
+    const choices = [...worktrees]
       .sort((left, right) => {
         const leftRoot = roots.some((root) => sameDirectory(root, left.path));
         const rightRoot = roots.some((root) => sameDirectory(root, right.path));
@@ -441,6 +469,37 @@ export class SessionManager implements vscode.Disposable {
       browse: true,
     });
     return choices;
+  }
+
+  #workspaceRoots(): string[] {
+    return (
+      vscode.workspace.workspaceFolders?.map(
+        (folder) => folder.uri.fsPath,
+      ) ?? [resolveWorkingDirectory()]
+    );
+  }
+
+  async #discoverWorktrees(
+    roots: readonly string[],
+  ): Promise<GitWorktree[]> {
+    const worktrees = new Map<string, GitWorktree>();
+    for (const root of roots) {
+      const discovered = await listGitWorktrees(root);
+      if (discovered.length === 0) {
+        worktrees.set(normalizedKey(root), {
+          path: root,
+          bare: false,
+          detached: false,
+          prunable: false,
+        });
+      }
+      for (const worktree of discovered) {
+        if (!worktree.bare && !worktree.prunable) {
+          worktrees.set(normalizedKey(worktree.path), worktree);
+        }
+      }
+    }
+    return [...worktrees.values()];
   }
 
   #activate(session: SessionPanel): void {

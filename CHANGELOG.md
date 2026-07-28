@@ -5,6 +5,18 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-07-28
+
+### Fixed
+
+- Standard session buttons now open immediately in current workspace or dedicated
+  Dzialkopedia OMP worktree instead of always showing worktree picker.
+- Shared or stale Dzialkopedia `main` is never selected as automatic session target.
+- Work, read-only, and Loop defaults resolve independently while preserving one-writer
+  lease contract.
+- Advanced `New Work Session in Chosen Worktree…` command retains explicit selection
+  for parallel feature work.
+
 ## [2.0.0] - 2026-07-27
 
 ### Added

@@ -117,6 +117,7 @@ and no shadow process exist.
 ## Commands
 
 - `OMP Sessions: New Work Session`
+- `OMP Sessions: New Work Session in Chosen Worktree…`
 - `OMP Sessions: Open Diagnostic TUI Session`
 - `OMP Sessions: New Read-Only Session`
 - `OMP Sessions: New Loop Controller`
@@ -134,6 +135,12 @@ Default shortcut for a new work session:
 - Windows/Linux: `Ctrl+Shift+Alt+I`
 - macOS: `Cmd+Shift+Alt+I`
 
+Standard session commands are picker-free. Generic projects use current workspace.
+Dzialkopedia uses current eligible `wip/*` checkout or dedicated
+`*-omp-daily-driver` / `*-omp-loop-controller` worktree. Shared `main` is excluded.
+Use **New Work Session in Chosen Worktree…** only when explicit parallel branch
+selection is needed.
+
 ## Build and install
 
 ```bash
@@ -142,7 +149,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.0.0.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.0.1.vsix --force
 ```
 
 ## Current boundary
