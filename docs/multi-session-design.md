@@ -57,11 +57,11 @@ This avoids stale VS Code `PATH` state after installing OMP.
 Included:
 
 - concurrent native editor tabs;
-- active-session sidebar;
+- single-action active-session sidebar;
 - picker-free current/dedicated-worktree default plus explicit advanced picker;
 - atomic cross-process writer leases with stale-PID recovery;
 - read-only brainstorming profile;
-- repository-owned Loop controller profile;
+- conversation-triggered handoff to repository-owned Loop controller profile;
 - same-repository source-path remapping;
 - restart, search, rename, close, and source-context commands;
 - automatic local OMP binary detection.

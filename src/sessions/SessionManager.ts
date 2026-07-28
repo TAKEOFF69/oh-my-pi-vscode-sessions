@@ -72,6 +72,7 @@ export class SessionManager implements vscode.Disposable {
     kind: SessionKind = "work",
     transport: SessionTransport = "rpc",
     directoryMode: DirectoryMode = "auto",
+    requestedLoopAlias?: string,
   ): Promise<SessionPanel | undefined> {
     this.#logger.info(`New ${kind} ${transport} session requested`);
     const directory =
@@ -176,16 +177,25 @@ export class SessionManager implements vscode.Disposable {
     }
     resolvedKind = finalSafety.kind;
 
-    let loopAlias: string | undefined;
+    let loopAlias = requestedLoopAlias?.trim();
     if (resolvedKind === "loop") {
-      loopAlias = await vscode.window.showInputBox({
-        title: "Loop v2 alias",
-        prompt: "Tracked start alias passed to npm run omp:loop",
-        validateInput: (value) =>
-          /^[a-z0-9][a-z0-9-]{0,63}$/i.test(value.trim())
-            ? undefined
-            : "Use one simple alias (letters, numbers, hyphens)",
-      });
+      if (
+        loopAlias &&
+        !/^[a-z0-9][a-z0-9-]{0,63}$/i.test(loopAlias)
+      ) {
+        await vscode.window.showErrorMessage(
+          "OMP Sessions: Loop alias must use only letters, numbers, and hyphens.",
+        );
+        return undefined;
+      }
+      loopAlias ??= await vscode.window.showInputBox({
+          title: "Loop v2 alias",
+          prompt: "Tracked start alias passed to npm run omp:loop",
+          validateInput: (value) =>
+            /^[a-z0-9][a-z0-9-]{0,63}$/i.test(value.trim())
+              ? undefined
+              : "Use one simple alias (letters, numbers, hyphens)",
+        });
       if (!loopAlias) {
         return undefined;
       }
@@ -257,6 +267,7 @@ export class SessionManager implements vscode.Disposable {
         (disposed) => this.#remove(disposed),
         (activated) => this.#activate(activated),
         () => this.#refresh(),
+        (alias, source) => this.#handoffToLoop(alias, source),
         this.#logger,
       );
     } catch (error) {
@@ -271,6 +282,35 @@ export class SessionManager implements vscode.Disposable {
     this.#active = session;
     this.#refresh();
     return session;
+  }
+
+  async #handoffToLoop(
+    alias: string,
+    source: SessionPanel,
+  ): Promise<void> {
+    const existing = this.#sessions.find(
+      (session) =>
+        session.kind === "loop" &&
+        session.label.toLowerCase() === alias.toLowerCase(),
+    );
+    if (existing) {
+      existing.reveal();
+      return;
+    }
+    this.#logger.info(
+      `Opening isolated Loop controller "${alias}" from "${source.label}"`,
+    );
+    const opened = await this.newSession(
+      "loop",
+      "rpc",
+      "auto",
+      alias,
+    );
+    if (opened) {
+      await vscode.window.showInformationMessage(
+        `Loop "${alias}" opened in isolated controller tab.`,
+      );
+    }
   }
 
   async openOrCreate(): Promise<void> {

@@ -51,6 +51,10 @@ export class SessionPanel implements vscode.Disposable {
     onDisposed: (session: SessionPanel) => void | Promise<void>,
     onActivated: (session: SessionPanel) => void,
     onChanged: (session: SessionPanel) => void,
+    onLoopHandoff: (
+      alias: string,
+      source: SessionPanel,
+    ) => void | Promise<void>,
     logger: SessionLogger,
   ) {
     this.#spec = spec;
@@ -97,6 +101,7 @@ export class SessionPanel implements vscode.Disposable {
               this.panel.title = this.#title();
               this.#onChanged(this);
             },
+            onLoopHandoff: (alias) => onLoopHandoff(alias, this),
           })
         : new TerminalSessionHost({
             extensionUri,

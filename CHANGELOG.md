@@ -5,6 +5,18 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-28
+
+### Changed
+
+- Sidebar now exposes one primary **New Session** action. Specialized profiles no
+  longer compete as startup buttons.
+- Normal Dzialkopedia session can request isolated Loop controller during conversation
+  through validated `loop_handoff` result.
+- Read-only, diagnostic TUI, manual Loop, and chosen-worktree launches remain advanced
+  Command Palette operations.
+- Normal session labels no longer present internal Work mode as user-facing choice.
+
 ## [2.0.1] - 2026-07-28
 
 ### Fixed
