@@ -181,7 +181,7 @@ test("canonical validation binds every executable adapter byte to GitHub main", 
 
     assert.equal(await validateCanonicalDzialkiAdapter(root, loader), true);
     await writeFile(
-      nodePath.join(root, "scripts", "omp", "runtime-tools.mjs"),
+      nodePath.join(root, "scripts", "omp", "windows-job-runner.ps1"),
       "modified\n",
       "utf8",
     );

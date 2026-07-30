@@ -61,6 +61,7 @@ export const CANONICAL_ADAPTER_PATHS = [
   "scripts/omp/policy.mjs",
   "scripts/omp/preflight.mjs",
   "scripts/omp/runtime-tools.mjs",
+  "scripts/omp/windows-job-runner.ps1",
 ] as const;
 const PREFLIGHT_PATH = "scripts/omp/preflight.mjs";
 

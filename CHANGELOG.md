@@ -5,6 +5,15 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.3] - 2026-07-30
+
+### Security
+
+- Canonical Dzialkopedia adapter validation now pins the Windows Job Object
+  launcher used by OMP preflight. Timed probes start suspended, enter a
+  `KILL_ON_JOB_CLOSE` job before execution, and cannot leave detached descendants
+  behind when a root process exits or times out.
+
 ## [2.1.2] - 2026-07-30
 
 ### Performance
