@@ -5,6 +5,19 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-07-30
+
+### Performance
+
+- Fresh Dzialkopedia worktree checkout uses four bounded Git checkout workers.
+  Measured repository checkout fell from 25.5 seconds to 7.6–9.8 seconds on the
+  target Windows workstation without changing branch, SHA, cleanliness, or
+  canonical-adapter validation.
+- Repository identity and worktree discovery now overlap, including multi-root
+  workspace discovery.
+- RPC startup logs separate transport, parity, and fully-ready timings so future
+  slow boots can be attributed without opening or terminating editor processes.
+
 ## [2.1.1] - 2026-07-30
 
 ### Fixed

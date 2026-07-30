@@ -258,6 +258,7 @@ export class RpcSessionHost implements SessionHost {
     if (this.#disposed || this.#rpc) {
       return;
     }
+    const startedAt = Date.now();
     this.#onStatusChange("starting");
     this.#logger.info(
       `Starting RPC "${this.#label}" in ${this.#cwd} with ${this.#executable}`,
@@ -322,6 +323,9 @@ export class RpcSessionHost implements SessionHost {
 
     try {
       await rpc.start();
+      this.#logger.info(
+        `RPC transport ready for "${this.#label}": ${Date.now() - startedAt} ms`,
+      );
       if (this.#rpc !== rpc || this.#disposed) {
         return;
       }
@@ -344,6 +348,9 @@ export class RpcSessionHost implements SessionHost {
       if (!this.#validateParity(runtimeState)) {
         return;
       }
+      this.#logger.info(
+        `RPC parity ready for "${this.#label}": ${Date.now() - startedAt} ms`,
+      );
 
       const [history] = await Promise.all([
         loadRpcMessageHistory(rpc),
@@ -368,6 +375,9 @@ export class RpcSessionHost implements SessionHost {
       await this.#post({ type: "rpc", frame: history });
       this.#onStatusChange("idle");
       await this.#post({ type: "transport", status: "ready" });
+      this.#logger.info(
+        `RPC session ready for "${this.#label}": ${Date.now() - startedAt} ms`,
+      );
       const restored = Boolean(this.#resumeSessionFile);
       this.#resumeSessionFile = undefined;
       if (!restored && this.#initialPrompt) {
