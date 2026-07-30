@@ -4,8 +4,14 @@ export function buildSpawnCommand(
   executable: string,
   extraArgs: readonly string[] = [],
 ): { file: string; args: string[] } {
+  assertSafeOmpRuntime(executable);
   if (isDirectExecutable(executable)) {
     return { file: executable, args: [...extraArgs] };
+  }
+  if (!isSingleExecutableReference(executable)) {
+    throw new Error(
+      "OMP executablePath must name a single executable. Put every argument in ohMyPiSessions.defaultArguments.",
+    );
   }
 
   if (process.platform === "win32") {
@@ -62,6 +68,27 @@ export function buildPtyEnv(): Record<string, string> {
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ASAR;
   return env;
+}
+
+export function assertSafeOmpRuntime(executable: string): void {
+  const normalized = executable
+    .trim()
+    .replaceAll("\\", "/")
+    .toLowerCase();
+  if (
+    /(?:^|[\/\s"'`;=&|()])(?:code(?:\s+-\s+(?:insiders|oss))?|code-insiders|codium|vscodium|electron|cursor|windsurf)(?:\.(?:exe|cmd|bat|com|sh))?(?=$|[\s"'`;=&|()])/.test(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      `Unsafe OMP runtime rejected: ${executable}. VS Code or Electron must never be launched as an OMP child process.`,
+    );
+  }
+}
+
+function isSingleExecutableReference(executable: string): boolean {
+  const value = executable.trim();
+  return value.length > 0 && !/[\s;&|`$><()]/.test(value);
 }
 
 function isDirectExecutable(executable: string): boolean {

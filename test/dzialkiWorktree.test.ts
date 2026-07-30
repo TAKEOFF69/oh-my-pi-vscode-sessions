@@ -1,10 +1,70 @@
 import assert from "node:assert/strict";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import * as os from "node:os";
 import * as nodePath from "node:path";
 import { describe, it } from "node:test";
 
-import { provisionDzialkiWorktree } from "../src/dzialkiWorktree";
+import {
+  bootstrapWorktree,
+  provisionDzialkiWorktree,
+} from "../src/dzialkiWorktree";
 
 describe("Dzialkopedia automatic worktree provisioning", () => {
+  it("copies missing local env without overwriting canonical tracked files", async () => {
+    const root = await mkdtemp(
+      nodePath.join(os.tmpdir(), "omp-bootstrap-source-"),
+    );
+    const target = await mkdtemp(
+      nodePath.join(os.tmpdir(), "omp-bootstrap-target-"),
+    );
+    try {
+      await mkdir(nodePath.join(root, "apps", "web"), {
+        recursive: true,
+      });
+      await mkdir(nodePath.join(target, "apps", "web"), {
+        recursive: true,
+      });
+      await writeFile(
+        nodePath.join(root, ".env.example"),
+        "stale lobby\n",
+      );
+      await writeFile(
+        nodePath.join(target, ".env.example"),
+        "canonical worktree\n",
+      );
+      await writeFile(
+        nodePath.join(root, ".env.local"),
+        "SECRET=test\n",
+      );
+
+      await bootstrapWorktree(root, target);
+
+      assert.equal(
+        await readFile(
+          nodePath.join(target, ".env.example"),
+          "utf8",
+        ),
+        "canonical worktree\n",
+      );
+      assert.equal(
+        await readFile(
+          nodePath.join(target, ".env.local"),
+          "utf8",
+        ),
+        "SECRET=test\n",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
   it("uses extension-owned Git operations and validates fresh origin/main", async () => {
     const root = nodePath.resolve("C:/repo");
     const expectedCwd = nodePath.join(
@@ -53,12 +113,6 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
     assert.equal(bootstrapped, true);
     assert.deepEqual(commands[0].args, ["fetch", "origin", "main"]);
     assert.deepEqual(commands[1].args, [
-      "ls-remote",
-      "--heads",
-      "origin",
-      expectedBranch,
-    ]);
-    assert.deepEqual(commands[2].args, [
       "worktree",
       "add",
       "-b",
@@ -66,6 +120,10 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
       expectedCwd,
       "origin/main",
     ]);
+    assert.equal(
+      commands.some(({ args }) => args[0] === "ls-remote"),
+      false,
+    );
     assert.equal(
       commands.some(({ args }) => args[0] === "config"),
       true,

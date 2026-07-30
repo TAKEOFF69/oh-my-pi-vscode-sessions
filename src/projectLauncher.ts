@@ -20,6 +20,7 @@ export type ProjectLauncher = {
 
 type ProjectLauncherDetectionOptions = {
   pathExists?: (candidate: string) => boolean;
+  resolveNodeExecutable?: () => string;
   identifyRepository?: (
     cwd: string,
   ) => Promise<GitRepositoryIdentity | undefined>;
@@ -68,6 +69,13 @@ export type CanonicalAdapterSnapshot = {
   declaredPaths: readonly string[];
 };
 
+type NodeExecutableResolutionOptions = {
+  execPath?: string;
+  pathValue?: string;
+  pathExists?: (candidate: string) => boolean;
+  platform?: NodeJS.Platform;
+};
+
 export async function detectProjectLauncher(
   cwd: string,
   options: ProjectLauncherDetectionOptions = {},
@@ -98,12 +106,50 @@ export async function detectProjectLauncher(
     );
   }
   return {
-    executable: process.execPath,
+    executable: (
+      options.resolveNodeExecutable ?? resolveNodeExecutable
+    )(),
     baseArgs: [launcher],
     readOnlyArgument: "--read-only",
     rpcArgument: "--rpc",
     parityKind: "dzialki-v1",
   };
+}
+
+export function resolveNodeExecutable(
+  options: NodeExecutableResolutionOptions = {},
+): string {
+  const platform = options.platform ?? process.platform;
+  const pathExists = options.pathExists ?? existsSync;
+  const execPath = options.execPath ?? process.execPath;
+  const pathApi =
+    platform === "win32" ? nodePath.win32 : nodePath.posix;
+  const nodeName = platform === "win32" ? "node.exe" : "node";
+
+  if (
+    pathApi.basename(execPath).toLowerCase() ===
+      nodeName.toLowerCase() &&
+    pathExists(execPath)
+  ) {
+    return execPath;
+  }
+
+  const delimiter = platform === "win32" ? ";" : ":";
+  const pathValue = options.pathValue ?? process.env.PATH ?? "";
+  for (const rawEntry of pathValue.split(delimiter)) {
+    const entry = rawEntry.trim().replace(/^"(.*)"$/, "$1");
+    if (!entry) {
+      continue;
+    }
+    const candidate = pathApi.join(entry, nodeName);
+    if (pathExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    "Node.js executable was not found. Install Node.js or add node to PATH before starting a Dzialkopedia OMP session.",
+  );
 }
 
 export function canonicalDzialkiOrigin(origin: string | undefined): boolean {
@@ -221,7 +267,7 @@ function containedAdapterPath(
   return resolved;
 }
 
-async function loadCanonicalGitHubSnapshot(): Promise<
+async function fetchCanonicalGitHubSnapshot(): Promise<
   CanonicalAdapterSnapshot
 > {
   const payload = (await loadGitHubJson(CANONICAL_TREE_ENDPOINT)) as {
@@ -277,6 +323,46 @@ async function loadCanonicalGitHubSnapshot(): Promise<
       preflight.toString("utf8"),
     ),
   };
+}
+
+export function createCanonicalSnapshotLoader(
+  load: () => Promise<CanonicalAdapterSnapshot>,
+  ttlMs: number,
+  now: () => number = Date.now,
+): () => Promise<CanonicalAdapterSnapshot> {
+  let cached:
+    | {
+        expiresAt: number;
+        promise: Promise<CanonicalAdapterSnapshot>;
+      }
+    | undefined;
+  return () => {
+    const current = now();
+    if (cached && current < cached.expiresAt) {
+      return cached.promise;
+    }
+    const promise = load();
+    const next = {
+      expiresAt: current + ttlMs,
+      promise,
+    };
+    cached = next;
+    void promise.catch(() => {
+      if (cached === next) {
+        cached = undefined;
+      }
+    });
+    return promise;
+  };
+}
+
+const loadCanonicalGitHubSnapshot = createCanonicalSnapshotLoader(
+  fetchCanonicalGitHubSnapshot,
+  5 * 60_000,
+);
+
+export function warmCanonicalDzialkiAdapterSnapshot(): void {
+  void loadCanonicalGitHubSnapshot().catch(() => undefined);
 }
 
 async function loadGitHubJson(endpoint: string): Promise<unknown> {

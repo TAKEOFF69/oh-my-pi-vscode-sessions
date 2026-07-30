@@ -24,7 +24,7 @@ export function activate(context: vscode.ExtensionContext): void {
       manager.openOrCreate(),
     ),
     vscode.commands.registerCommand("ohMyPiSessions.newSession", () =>
-      manager.newSession("work"),
+      manager.newPrimarySession(),
     ),
     vscode.commands.registerCommand(
       "ohMyPiSessions.newSessionInWorktree",
@@ -147,7 +147,7 @@ export function activate(context: vscode.ExtensionContext): void {
       .getConfiguration("ohMyPiSessions")
       .get<boolean>("autoStart", false)
   ) {
-    void manager.newSession("work");
+    void manager.newPrimarySession();
   }
 }
 

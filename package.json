@@ -2,7 +2,7 @@
   "name": "oh-my-pi-vscode-sessions",
   "displayName": "Oh My Pi Sessions",
   "description": "Run concurrent structured Oh My Pi RPC sessions in native VS Code editor tabs, each bound to its own folder or Git worktree.",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",
@@ -230,7 +230,7 @@
           "type": "string",
           "default": "",
           "scope": "resource",
-          "markdownDescription": "OMP executable or command. Windows auto-detects `%LOCALAPPDATA%\\omp\\omp.exe`; otherwise defaults to `omp`. Existing `ohMyPi.executablePath` is honored as a migration fallback."
+          "markdownDescription": "OMP executable only; put arguments in `ohMyPiSessions.defaultArguments`. Windows auto-detects `%LOCALAPPDATA%\\omp\\omp.exe`; otherwise defaults to `omp`. Existing `ohMyPi.executablePath` is honored as a migration fallback."
         },
         "ohMyPiSessions.defaultArguments": {
           "type": "array",

@@ -3,6 +3,14 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+const extensionSource = readFileSync(
+  "src/extension.ts",
+  "utf8",
+);
+const sessionManagerSource = readFileSync(
+  "src/sessions/SessionManager.ts",
+  "utf8",
+);
 
 test("sidebar exposes one primary New Session path", () => {
   const welcome = manifest.contributes.viewsWelcome.find(
@@ -22,6 +30,18 @@ test("sidebar exposes one primary New Session path", () => {
     "ohMyPiSessions.newSession",
     "ohMyPiSessions.closeAll",
   ]);
+  assert.match(
+    extensionSource,
+    /registerCommand\("ohMyPiSessions\.newSession",[\s\S]{0,120}manager\.newPrimarySession\(\)/,
+  );
+  assert.doesNotMatch(
+    extensionSource,
+    /manager\.newSession\("work"\)/,
+  );
+  assert.doesNotMatch(
+    sessionManagerSource,
+    /return this\.newSession\(\)/,
+  );
 });
 
 test("specialized profiles remain advanced commands", () => {

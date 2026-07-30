@@ -18,13 +18,11 @@ describe("buildSpawnCommand", () => {
     assert.equal(result.args[2], "omp");
   });
 
-  it("preserves executable arguments in shell command", () => {
-    if (process.platform === "win32") {
-      return;
-    }
-
-    const result = buildSpawnCommand("omp --verbose");
-    assert.equal(result.args[2], "omp --verbose");
+  it("requires arguments outside executablePath", () => {
+    assert.throws(
+      () => buildSpawnCommand("omp --verbose"),
+      /single executable/i,
+    );
   });
 
   it("returns windows command shape on win32", () => {
@@ -44,6 +42,23 @@ describe("buildSpawnCommand", () => {
     ]);
     assert.equal(result.file, process.execPath);
     assert.deepEqual(result.args, ["--thinking=max", "--advisor"]);
+  });
+
+  it("refuses VS Code and Electron as child runtimes", () => {
+    for (const executable of [
+      "C:\\Program Files\\Microsoft VS Code\\Code.exe",
+      "C:\\tools\\electron.exe",
+      "/usr/bin/code",
+      "powershell.exe -Command Code.exe",
+      "cmd.exe /c code.cmd",
+      "code-insiders",
+      "C:\\Program Files\\Microsoft VS Code\\Code - OSS.exe",
+    ]) {
+      assert.throws(
+        () => buildSpawnCommand(executable, ["launch.mjs"]),
+        /unsafe OMP runtime/i,
+      );
+    }
   });
 
   it("uses cmd quoting rather than PowerShell quoting for cmd fallback", () => {

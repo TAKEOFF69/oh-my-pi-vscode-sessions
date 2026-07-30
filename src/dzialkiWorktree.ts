@@ -39,6 +39,7 @@ type ProvisionOptions = {
   validate?: (
     worktree: ProvisionedDzialkiWorktree,
   ) => Promise<void>;
+  reportPhase?: (phase: string, elapsedMs: number) => void;
 };
 
 export async function provisionDzialkiWorktree(
@@ -67,40 +68,47 @@ export async function provisionDzialkiWorktree(
   }
 
   const runGit = options.runGit ?? runGitCommand;
+  const runPhase = async <T>(
+    phase: string,
+    action: () => Promise<T>,
+  ): Promise<T> => {
+    const startedAt = Date.now();
+    try {
+      return await action();
+    } finally {
+      options.reportPhase?.(phase, Date.now() - startedAt);
+    }
+  };
   let created = false;
   try {
-    await runGit(repositoryRoot, ["fetch", "origin", "main"]);
-    const remoteBranch = await runGit(repositoryRoot, [
-      "ls-remote",
-      "--heads",
-      "origin",
-      branch,
-    ]);
-    if (remoteBranch.stdout.trim()) {
-      throw new Error(`Remote OMP worktree branch already exists: ${branch}`);
-    }
-
-    await runGit(repositoryRoot, [
-      "worktree",
-      "add",
-      "-b",
-      branch,
-      cwd,
-      "origin/main",
-    ]);
+    await runPhase("fetch origin/main", () =>
+      runGit(repositoryRoot, ["fetch", "origin", "main"]),
+    );
+    await runPhase("create worktree", () =>
+      runGit(repositoryRoot, [
+        "worktree",
+        "add",
+        "-b",
+        branch,
+        cwd,
+        "origin/main",
+      ]),
+    );
     created = true;
 
     const [actualBranch, head, canonicalHead, status] =
-      await Promise.all([
-        runGit(cwd, ["branch", "--show-current"]),
-        runGit(cwd, ["rev-parse", "HEAD"]),
-        runGit(cwd, ["rev-parse", "origin/main"]),
-        runGit(cwd, [
-          "status",
-          "--porcelain",
-          "--untracked-files=no",
+      await runPhase("verify worktree", () =>
+        Promise.all([
+          runGit(cwd, ["branch", "--show-current"]),
+          runGit(cwd, ["rev-parse", "HEAD"]),
+          runGit(cwd, ["rev-parse", "origin/main"]),
+          runGit(cwd, [
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+          ]),
         ]),
-      ]);
+      );
     if (
       actualBranch.stdout.trim() !== branch ||
       head.stdout.trim() !== canonicalHead.stdout.trim() ||
@@ -112,12 +120,20 @@ export async function provisionDzialkiWorktree(
     }
 
     const worktree = { cwd, branch };
-    await options.validate?.(worktree);
-    await runGit(cwd, ["config", "core.hooksPath", ".githooks"]);
-    await (options.bootstrap ?? bootstrapWorktree)(
-      repositoryRoot,
-      cwd,
-    );
+    await runPhase("validate adapter", async () => {
+      await options.validate?.(worktree);
+    });
+    await runPhase("bootstrap worktree", async () => {
+      await runGit(cwd, [
+        "config",
+        "core.hooksPath",
+        ".githooks",
+      ]);
+      await (options.bootstrap ?? bootstrapWorktree)(
+        repositoryRoot,
+        cwd,
+      );
+    });
     return worktree;
   } catch (error) {
     if (created) {
@@ -139,7 +155,7 @@ export async function provisionDzialkiWorktree(
   }
 }
 
-async function bootstrapWorktree(
+export async function bootstrapWorktree(
   sourceRoot: string,
   targetRoot: string,
 ): Promise<void> {
@@ -171,9 +187,17 @@ async function bootstrapWorktree(
       if (!entry.isFile() || !entry.name.startsWith(".env")) {
         continue;
       }
+      const target = nodePath.join(
+        targetRoot,
+        relative,
+        entry.name,
+      );
+      if (existsSync(target)) {
+        continue;
+      }
       await copyFile(
         nodePath.join(sourceDirectory, entry.name),
-        nodePath.join(targetRoot, relative, entry.name),
+        target,
       );
     }
   }

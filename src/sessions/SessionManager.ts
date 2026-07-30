@@ -14,12 +14,14 @@ import {
   canonicalDzialkiOrigin,
   detectProjectLauncher,
   type ProjectLauncher,
+  warmCanonicalDzialkiAdapterSnapshot,
 } from "../projectLauncher";
 import { provisionDzialkiWorktree } from "../dzialkiWorktree";
 import {
   LoopHandoffSingleFlight,
   sameLoopAlias,
 } from "../loopHandoff";
+import { SessionCreationGate } from "../sessionCreationGate";
 import { planAutomaticDirectory } from "../sessionDirectory";
 import {
   listGitWorktrees,
@@ -61,6 +63,10 @@ export class SessionManager implements vscode.Disposable {
   #writerLeases = new Map<string, WriterLease>();
   #validatedLaunchers = new Map<string, ProjectLauncher>();
   #creationQueue: Promise<void> = Promise.resolve();
+  #primarySessionGate =
+    new SessionCreationGate<SessionPanel | undefined>({
+      cooldownMs: 1_500,
+    });
   #loopHandoffs =
     new LoopHandoffSingleFlight<SessionPanel | undefined>();
   #acceptingSessions = true;
@@ -77,6 +83,16 @@ export class SessionManager implements vscode.Disposable {
 
   get active(): SessionPanel | undefined {
     return this.#active;
+  }
+
+  newPrimarySession(): Promise<SessionPanel | undefined> {
+    return this.#primarySessionGate.run(
+      () => this.newSession("work"),
+      (reason) =>
+        this.#logger.info(
+          `Ignored duplicate New Session request (${reason})`,
+        ),
+    );
   }
 
   newSession(
@@ -366,7 +382,7 @@ export class SessionManager implements vscode.Disposable {
       this.#active.reveal();
       return;
     }
-    await this.newSession();
+    await this.newPrimarySession();
   }
 
   async resolveTarget(): Promise<SessionPanel | undefined> {
@@ -377,7 +393,7 @@ export class SessionManager implements vscode.Disposable {
       return this.#sessions[0];
     }
     if (this.#sessions.length === 0) {
-      return this.newSession();
+      return this.newPrimarySession();
     }
 
     const selected = await vscode.window.showQuickPick(
@@ -524,6 +540,7 @@ export class SessionManager implements vscode.Disposable {
       }
       try {
         let validatedLauncher: ProjectLauncher | undefined;
+        warmCanonicalDzialkiAdapterSnapshot();
         const created = await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Window,
@@ -531,6 +548,11 @@ export class SessionManager implements vscode.Disposable {
           },
           () =>
             provisionDzialkiWorktree(managementRoot, plan.role, {
+              reportPhase: (phase, elapsedMs) => {
+                this.#logger.info(
+                  `OMP worktree ${phase}: ${elapsedMs} ms`,
+                );
+              },
               validate: async (worktree) => {
                 validatedLauncher = await detectProjectLauncher(
                   worktree.cwd,
