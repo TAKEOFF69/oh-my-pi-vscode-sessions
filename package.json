@@ -2,7 +2,7 @@
   "name": "oh-my-pi-vscode-sessions",
   "displayName": "Oh My Pi Sessions",
   "description": "Run concurrent structured Oh My Pi RPC sessions in native VS Code editor tabs, each bound to its own folder or Git worktree.",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",

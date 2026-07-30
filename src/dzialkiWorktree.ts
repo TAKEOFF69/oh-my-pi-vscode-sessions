@@ -86,6 +86,10 @@ export async function provisionDzialkiWorktree(
     );
     await runPhase("create worktree", () =>
       runGit(repositoryRoot, [
+        "-c",
+        "checkout.workers=4",
+        "-c",
+        "checkout.thresholdForParallelism=100",
         "worktree",
         "add",
         "-b",

@@ -113,6 +113,10 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
     assert.equal(bootstrapped, true);
     assert.deepEqual(commands[0].args, ["fetch", "origin", "main"]);
     assert.deepEqual(commands[1].args, [
+      "-c",
+      "checkout.workers=4",
+      "-c",
+      "checkout.thresholdForParallelism=100",
       "worktree",
       "add",
       "-b",

@@ -507,9 +507,15 @@ export class SessionManager implements vscode.Disposable {
   async #automaticDirectory(
     kind: SessionKind,
   ): Promise<{ cwd: string; branch?: string } | undefined> {
+    const startedAt = Date.now();
     const roots = this.#workspaceRoots();
-    const worktrees = await this.#discoverWorktrees(roots);
-    const identity = await repositoryIdentity(roots[0]);
+    const [worktrees, identity] = await Promise.all([
+      this.#discoverWorktrees(roots),
+      repositoryIdentity(roots[0]),
+    ]);
+    this.#logger.info(
+      `OMP session repository discovery: ${Date.now() - startedAt} ms`,
+    );
     const plan = planAutomaticDirectory({
       workspaceRoots: roots,
       worktrees,
@@ -646,8 +652,13 @@ export class SessionManager implements vscode.Disposable {
     roots: readonly string[],
   ): Promise<GitWorktree[]> {
     const worktrees = new Map<string, GitWorktree>();
-    for (const root of roots) {
-      const discovered = await listGitWorktrees(root);
+    const discoveries = await Promise.all(
+      roots.map(async (root) => ({
+        root,
+        discovered: await listGitWorktrees(root),
+      })),
+    );
+    for (const { root, discovered } of discoveries) {
       if (discovered.length === 0) {
         worktrees.set(normalizedKey(root), {
           path: root,
