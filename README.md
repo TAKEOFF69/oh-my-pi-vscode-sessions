@@ -87,6 +87,9 @@ Manual override:
 }
 ```
 
+`executablePath` accepts one executable only. Keep all flags and subcommands in
+`defaultArguments`; shell-form command strings are rejected before process creation.
+
 The original extension's `ohMyPi.executablePath` setting is also read as a migration
 fallback.
 
@@ -162,7 +165,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.1.0.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.1.1.vsix --force
 ```
 
 ## Current boundary

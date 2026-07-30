@@ -5,6 +5,25 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-07-30
+
+### Fixed
+
+- Dzialkopedia project launcher now resolves real Node.js from `PATH` instead of
+  accidentally treating VS Code's extension-host executable as Node.
+- Spawn boundary rejects VS Code, VSCodium, and Electron executables before process
+  creation, including aliases nested in shell strings. `executablePath` now accepts
+  one executable only; flags belong in `defaultArguments`. This prevents OMP teardown
+  from targeting editor process trees.
+- Re-entrant ordinary session entry points share one in-flight creation and are
+  suppressed briefly after completion, preventing runaway worktree/session creation
+  from New Session, Open, auto-start, or source-context commands.
+- Canonical adapter verification warms concurrently with worktree preparation and is
+  single-flight cached for five minutes. Provisioning also removes one redundant
+  remote branch lookup and logs phase timings.
+- Worktree bootstrap copies only missing local environment files and never overwrites
+  canonical tracked files such as `.env.example`.
+
 ## [2.1.0] - 2026-07-28
 
 ### Changed
