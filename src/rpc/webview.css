@@ -1,27 +1,31 @@
 :root {
   color-scheme: light dark;
-  --omp-amber: #e6a23c;
-  --omp-amber-soft: color-mix(in srgb, var(--omp-amber) 16%, transparent);
+  --omp-accent: #d7b229;
   --omp-green: var(--vscode-testing-iconPassed, #73c991);
   --omp-red: var(--vscode-testing-iconFailed, #f14c4c);
   --omp-blue: var(--vscode-textLink-foreground, #4daafc);
-  --omp-surface: color-mix(
-    in srgb,
-    var(--vscode-editor-background) 92%,
-    var(--vscode-editor-foreground) 8%
-  );
-  --omp-surface-2: color-mix(
-    in srgb,
-    var(--vscode-editor-background) 84%,
-    var(--vscode-editor-foreground) 16%
-  );
+  --omp-muted: var(--vscode-descriptionForeground);
   --omp-line: color-mix(
     in srgb,
-    var(--vscode-editor-foreground) 15%,
+    var(--vscode-editor-foreground) 13%,
     transparent
   );
-  --omp-muted: var(--vscode-descriptionForeground);
-  --omp-radius: 7px;
+  --omp-line-strong: color-mix(
+    in srgb,
+    var(--vscode-editor-foreground) 21%,
+    transparent
+  );
+  --omp-surface: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 94%,
+    var(--vscode-editor-foreground) 6%
+  );
+  --omp-surface-raised: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 88%,
+    var(--vscode-editor-foreground) 12%
+  );
+  --omp-radius: 14px;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
 }
@@ -44,6 +48,11 @@ body {
   color: var(--vscode-editor-foreground);
 }
 
+#app {
+  width: 100%;
+  height: 100%;
+}
+
 button,
 textarea,
 input,
@@ -57,128 +66,118 @@ button {
 
 .app {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   width: 100%;
   height: 100%;
-  background:
-    linear-gradient(90deg, var(--omp-line) 1px, transparent 1px) 0 0 / 44px 44px,
-    linear-gradient(var(--omp-line) 1px, transparent 1px) 0 0 / 44px 44px,
-    var(--vscode-editor-background);
+  background: var(--vscode-editor-background);
 }
 
-.run-rail {
+.chat-header {
   position: relative;
-  z-index: 5;
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  min-height: 54px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--omp-line);
-  background: color-mix(
-    in srgb,
-    var(--vscode-editor-background) 94%,
-    transparent
-  );
-  backdrop-filter: blur(16px);
-}
-
-.identity {
+  z-index: 8;
   display: flex;
-  min-width: 0;
-  gap: 10px;
+  min-height: 48px;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 12px 6px 14px;
+  border-bottom: 1px solid var(--omp-line);
+  background: var(--vscode-editor-background);
 }
 
-.pi-mark {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--omp-amber) 55%, var(--omp-line));
-  border-radius: 8px 3px 8px 3px;
-  background: var(--omp-amber-soft);
-  color: var(--omp-amber);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 20px;
-  font-weight: 700;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omp-amber) 10%, transparent);
-}
-
-.identity-copy {
+.chat-heading {
   min-width: 0;
+}
+
+.chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chat-title {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .session-name {
+  max-width: min(460px, 58vw);
   overflow: hidden;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-path {
-  overflow: hidden;
-  margin-top: 2px;
+  margin-top: 3px;
   color: var(--omp-muted);
-  font-family: var(--vscode-editor-font-family);
   font-size: 10px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.rail-signals {
+.header-actions {
   display: flex;
-  max-width: 66vw;
-  flex-wrap: wrap;
-  gap: 5px;
-  justify-content: flex-end;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1px;
+}
+
+.icon-button {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  outline: none;
+  background: transparent;
+  color: var(--omp-muted);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-editor-foreground);
+}
+
+.icon-button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.icon-button svg,
+.access-status svg,
+.local-context svg,
+.send-button svg {
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
 }
 
 .signal {
-  display: inline-flex;
-  min-height: 24px;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 7px;
-  border: 1px solid var(--omp-line);
-  border-radius: 999px;
-  background: var(--omp-surface);
-  color: var(--omp-muted);
-  font-family: var(--vscode-editor-font-family);
-  font-size: 10px;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.signal strong {
-  color: var(--vscode-editor-foreground);
-  font-weight: 600;
-}
-
-.signal-dot {
+  display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--omp-muted);
 }
 
-.signal.running,
-.signal.pending {
-  color: var(--omp-amber);
+.signal.pending,
+.signal.running {
+  background: var(--omp-accent);
 }
 
-.signal.ready,
-.signal.passed {
-  color: var(--omp-green);
+.signal.passed,
+.signal.ready {
+  background: var(--omp-green);
 }
 
 .signal.failed,
 .signal.exited {
-  color: var(--omp-red);
+  background: var(--omp-red);
 }
 
 .workspace {
@@ -196,162 +195,122 @@ button {
 }
 
 .stream-inner {
-  width: min(920px, calc(100% - 32px));
+  width: min(780px, calc(100% - 36px));
   min-height: 100%;
   margin: 0 auto;
-  padding: 22px 0 124px;
+  padding: 30px 0 182px;
 }
 
 .empty-state {
   display: grid;
-  min-height: min(480px, 66vh);
+  min-height: min(560px, 69vh);
   place-items: center;
-  text-align: center;
 }
 
-.empty-card {
-  width: min(560px, 100%);
-  padding: 34px;
-  border: 1px solid var(--omp-line);
-  border-radius: 14px 5px 14px 5px;
-  background:
-    linear-gradient(135deg, var(--omp-amber-soft), transparent 42%),
-    var(--omp-surface);
-  box-shadow: 0 22px 60px color-mix(in srgb, black 18%, transparent);
+.empty-mark {
+  position: relative;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: color-mix(in srgb, var(--omp-muted) 50%, transparent);
+  opacity: 0.72;
 }
 
-.empty-kicker {
-  color: var(--omp-amber);
-  font-family: var(--vscode-editor-font-family);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.empty-card h1 {
-  margin: 12px 0 8px;
+.empty-mark span {
+  z-index: 2;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(24px, 5vw, 38px);
-  font-weight: 500;
-  letter-spacing: -0.035em;
+  font-size: 19px;
+  font-weight: 600;
 }
 
-.empty-card p {
-  max-width: 440px;
-  margin: 0 auto;
-  color: var(--omp-muted);
-  line-height: 1.55;
+.empty-mark i {
+  position: absolute;
+  inset: 7px;
+  border: 2px solid currentColor;
+  border-radius: 48% 52% 46% 54%;
 }
 
-.shortcut-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  justify-content: center;
-  margin-top: 20px;
+.empty-mark i:nth-of-type(1) {
+  transform: rotate(14deg) scale(1.08, 0.82);
 }
 
-kbd {
-  padding: 3px 6px;
-  border: 1px solid var(--omp-line);
-  border-bottom-color: color-mix(in srgb, var(--omp-line) 50%, black);
-  border-radius: 4px;
-  background: var(--omp-surface-2);
-  color: var(--vscode-editor-foreground);
-  font-family: var(--vscode-editor-font-family);
-  font-size: 10px;
+.empty-mark i:nth-of-type(2) {
+  transform: rotate(74deg) scale(1.03, 0.78);
+}
+
+.empty-mark i:nth-of-type(3) {
+  transform: rotate(132deg) scale(1.1, 0.8);
 }
 
 .timeline {
   display: grid;
-  gap: 14px;
+  gap: 22px;
 }
 
 .message {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 10px;
-  animation: enter 160ms ease-out both;
+  min-width: 0;
+  animation: enter 150ms ease-out both;
 }
 
 @keyframes enter {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translateY(3px);
   }
-}
-
-.avatar {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border: 1px solid var(--omp-line);
-  border-radius: 50%;
-  background: var(--omp-surface);
-  color: var(--omp-muted);
-  font-family: var(--vscode-editor-font-family);
-  font-size: 9px;
-  font-weight: 700;
-}
-
-.message.user .avatar {
-  border-color: color-mix(in srgb, var(--omp-blue) 45%, var(--omp-line));
-  color: var(--omp-blue);
-}
-
-.message.assistant .avatar {
-  border-radius: 7px 2px 7px 2px;
-  border-color: color-mix(in srgb, var(--omp-amber) 45%, var(--omp-line));
-  color: var(--omp-amber);
-}
-
-.message.advisory .avatar {
-  border-color: color-mix(in srgb, var(--omp-red) 45%, var(--omp-line));
-  color: var(--omp-red);
 }
 
 .message-body {
   min-width: 0;
-  padding-top: 2px;
 }
 
 .message-meta {
   display: flex;
-  gap: 8px;
   align-items: baseline;
-  margin-bottom: 5px;
+  gap: 7px;
+  margin-bottom: 7px;
   color: var(--omp-muted);
-  font-family: var(--vscode-editor-font-family);
   font-size: 10px;
 }
 
 .message-meta strong {
   color: var(--vscode-editor-foreground);
-  font-weight: 650;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.message.user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.message.user .message-body {
+  width: min(100%, 680px);
 }
 
 .message.user .content {
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--omp-blue) 24%, var(--omp-line));
-  border-radius: 3px 10px 10px 10px;
-  background: color-mix(in srgb, var(--omp-blue) 7%, var(--omp-surface));
+  padding: 11px 13px;
+  border: 1px solid var(--omp-line-strong);
+  border-radius: 12px;
+  background: var(--omp-surface-raised);
 }
 
-.message.advisory .content {
-  padding: 11px 12px;
-  border: 1px solid color-mix(in srgb, var(--omp-red) 40%, var(--omp-line));
-  border-left-width: 3px;
-  border-radius: 3px var(--omp-radius) var(--omp-radius) 3px;
-  background: color-mix(in srgb, var(--omp-red) 7%, var(--omp-surface));
+.message.advisory .message-body {
+  padding-left: 12px;
+  border-left: 2px solid color-mix(in srgb, var(--omp-red) 72%, transparent);
+}
+
+.message.developer .message-body,
+.message.custom .message-body,
+.message.toolResult .message-body {
+  padding-left: 12px;
+  border-left: 2px solid var(--omp-line-strong);
 }
 
 .markdown {
   overflow-wrap: anywhere;
   font-size: 13px;
-  line-height: 1.58;
+  line-height: 1.62;
 }
 
 .markdown > :first-child {
@@ -366,7 +325,7 @@ kbd {
 .markdown ul,
 .markdown ol,
 .markdown blockquote {
-  margin: 0 0 9px;
+  margin: 0 0 10px;
 }
 
 .markdown ul,
@@ -377,22 +336,21 @@ kbd {
 .markdown h1,
 .markdown h2,
 .markdown h3 {
-  margin: 18px 0 8px;
-  font-family: Georgia, "Times New Roman", serif;
-  font-weight: 500;
-  letter-spacing: -0.02em;
+  margin: 20px 0 9px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 .markdown h1 {
-  font-size: 22px;
+  font-size: 20px;
 }
 
 .markdown h2 {
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .markdown h3 {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .markdown a {
@@ -405,6 +363,12 @@ kbd {
   text-decoration: underline;
 }
 
+.markdown blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--omp-line-strong);
+  color: var(--omp-muted);
+}
+
 .markdown code,
 .json {
   font-family: var(--vscode-editor-font-family);
@@ -412,44 +376,48 @@ kbd {
 
 .markdown :not(pre) > code {
   padding: 1px 4px;
-  border: 1px solid var(--omp-line);
   border-radius: 4px;
-  background: var(--omp-surface-2);
-  font-size: 0.92em;
+  background: var(--omp-surface-raised);
+  font-size: 0.91em;
 }
 
 .markdown pre,
 .json {
   overflow: auto;
-  margin: 9px 0;
-  padding: 10px 12px;
+  margin: 10px 0;
+  padding: 11px 12px;
   border: 1px solid var(--omp-line);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--vscode-editor-background) 76%, black);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 78%, black);
   font-size: 11px;
   line-height: 1.5;
   white-space: pre;
 }
 
 .thinking {
-  margin: 7px 0 9px;
-  border-left: 1px solid color-mix(in srgb, var(--omp-amber) 38%, var(--omp-line));
+  margin: 3px 0 10px;
 }
 
 .thinking summary {
-  padding: 3px 9px;
+  width: fit-content;
+  padding: 2px 0;
   color: var(--omp-muted);
   cursor: pointer;
-  font-family: var(--vscode-editor-font-family);
-  font-size: 10px;
+  font-size: 11px;
   user-select: none;
 }
 
+.thinking summary::marker {
+  color: color-mix(in srgb, var(--omp-muted) 68%, transparent);
+}
+
 .thinking-body {
-  padding: 6px 10px 2px;
+  margin-top: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--omp-line-strong);
   color: color-mix(
     in srgb,
-    var(--vscode-editor-foreground) 76%,
+    var(--vscode-editor-foreground) 72%,
     var(--vscode-editor-background)
   );
   font-size: 12px;
@@ -457,11 +425,12 @@ kbd {
 
 .streaming-caret {
   display: inline-block;
-  width: 6px;
+  width: 5px;
   height: 13px;
   margin-left: 3px;
   vertical-align: -2px;
-  background: var(--omp-amber);
+  border-radius: 1px;
+  background: var(--vscode-editor-foreground);
   animation: blink 900ms steps(2, jump-none) infinite;
 }
 
@@ -473,12 +442,10 @@ kbd {
 
 .extension-surfaces {
   display: grid;
-  gap: 8px;
-  margin-left: 38px;
-  padding: 10px 12px;
-  border: 1px solid var(--omp-line);
-  border-radius: var(--omp-radius);
-  background: var(--omp-surface);
+  gap: 7px;
+  padding: 9px 11px;
+  border-left: 2px solid var(--omp-line-strong);
+  color: var(--omp-muted);
 }
 
 .extension-status {
@@ -486,15 +453,14 @@ kbd {
   grid-template-columns: minmax(80px, auto) 1fr;
   gap: 10px;
   align-items: baseline;
-  color: var(--omp-muted);
 }
 
 .extension-status code,
 .extension-widget-title {
-  color: var(--omp-amber);
+  color: var(--vscode-editor-foreground);
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .extension-widget pre {
@@ -507,23 +473,22 @@ kbd {
 
 .tool-deck {
   display: grid;
-  gap: 7px;
-  margin: 2px 0 4px 38px;
+  gap: 3px;
 }
 
 .tool-card {
   overflow: hidden;
-  border: 1px solid var(--omp-line);
-  border-radius: var(--omp-radius);
-  background: var(--omp-surface);
+  border: 0;
+  border-left: 2px solid var(--omp-line-strong);
+  background: transparent;
 }
 
 .tool-card.running {
-  border-color: color-mix(in srgb, var(--omp-amber) 38%, var(--omp-line));
+  border-left-color: var(--omp-accent);
 }
 
 .tool-card.failed {
-  border-color: color-mix(in srgb, var(--omp-red) 44%, var(--omp-line));
+  border-left-color: var(--omp-red);
 }
 
 .tool-head {
@@ -533,20 +498,25 @@ kbd {
   align-items: center;
   width: 100%;
   min-height: 34px;
-  padding: 6px 9px;
+  padding: 5px 8px 5px 10px;
   border: 0;
+  border-radius: 6px;
+  outline: none;
   background: transparent;
   cursor: pointer;
   text-align: left;
 }
 
+.tool-head:hover,
+.tool-head:focus-visible {
+  background: var(--vscode-list-hoverBackground);
+}
+
 .tool-icon {
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   place-items: center;
-  border-radius: 4px;
-  background: var(--omp-surface-2);
   color: var(--omp-muted);
   font-family: var(--vscode-editor-font-family);
   font-size: 9px;
@@ -554,7 +524,7 @@ kbd {
 }
 
 .tool-card.running .tool-icon {
-  color: var(--omp-amber);
+  color: var(--omp-accent);
 }
 
 .tool-card.failed .tool-icon {
@@ -568,12 +538,12 @@ kbd {
 .tool-name {
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .tool-intent {
   overflow: hidden;
-  margin-top: 2px;
+  margin-top: 1px;
   color: var(--omp-muted);
   font-size: 10px;
   text-overflow: ellipsis;
@@ -584,11 +554,11 @@ kbd {
   color: var(--omp-muted);
   font-family: var(--vscode-editor-font-family);
   font-size: 9px;
-  text-transform: uppercase;
+  text-transform: lowercase;
 }
 
 .tool-details {
-  padding: 0 9px 9px 35px;
+  padding: 0 8px 8px 35px;
 }
 
 .tool-actions {
@@ -599,17 +569,15 @@ kbd {
 
 .notice-stack {
   display: grid;
-  gap: 6px;
-  margin: 0 0 10px 38px;
+  gap: 5px;
 }
 
 .notice {
   display: grid;
-  grid-template-columns: 4px minmax(0, 1fr) auto;
+  grid-template-columns: 2px minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--omp-line);
   border-radius: 5px;
-  background: color-mix(in srgb, var(--omp-surface) 88%, transparent);
+  background: color-mix(in srgb, var(--omp-surface) 65%, transparent);
 }
 
 .notice-bar {
@@ -617,7 +585,7 @@ kbd {
 }
 
 .notice.warning .notice-bar {
-  background: var(--omp-amber);
+  background: var(--omp-accent);
 }
 
 .notice.error .notice-bar {
@@ -635,7 +603,7 @@ kbd {
 
 .notice-title {
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .notice-detail {
@@ -649,13 +617,12 @@ kbd {
 }
 
 .agents {
-  margin: 10px 0 0 38px;
+  margin-top: 3px;
 }
 
 .agents summary {
   color: var(--omp-muted);
   cursor: pointer;
-  font-family: var(--vscode-editor-font-family);
   font-size: 10px;
 }
 
@@ -667,9 +634,8 @@ kbd {
 }
 
 .agent {
-  padding: 8px;
-  border: 1px solid var(--omp-line);
-  border-radius: 6px;
+  padding: 8px 9px;
+  border-left: 2px solid var(--omp-line-strong);
   background: var(--omp-surface);
 }
 
@@ -690,66 +656,107 @@ kbd {
 
 .composer-shell {
   position: absolute;
-  z-index: 6;
+  z-index: 10;
   right: 0;
   bottom: 0;
   left: 0;
-  padding: 12px 14px 14px;
+  padding: 22px 14px 10px;
   pointer-events: none;
   background: linear-gradient(
     to bottom,
     transparent,
-    var(--vscode-editor-background) 28%
+    var(--vscode-editor-background) 25%,
+    var(--vscode-editor-background) 100%
   );
 }
 
 .composer {
   position: relative;
-  width: min(920px, 100%);
+  width: min(840px, 100%);
   margin: 0 auto;
-  border: 1px solid color-mix(in srgb, var(--omp-amber) 24%, var(--omp-line));
-  border-radius: 12px 4px 12px 4px;
-  background: color-mix(
-    in srgb,
-    var(--vscode-input-background) 96%,
-    transparent
-  );
-  box-shadow: 0 14px 36px color-mix(in srgb, black 22%, transparent);
+  border: 1px solid var(--omp-line-strong);
+  border-radius: 17px;
+  background: var(--vscode-input-background, var(--omp-surface));
+  box-shadow: 0 8px 24px color-mix(in srgb, black 16%, transparent);
   pointer-events: auto;
 }
 
 .composer:focus-within {
-  border-color: color-mix(in srgb, var(--omp-amber) 68%, var(--vscode-focusBorder));
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-focusBorder) 68%,
+    var(--omp-line-strong)
+  );
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--omp-amber) 22%, transparent),
-    0 14px 36px color-mix(in srgb, black 22%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent),
+    0 8px 24px color-mix(in srgb, black 16%, transparent);
 }
 
 .composer textarea {
   display: block;
   width: 100%;
   max-height: 220px;
-  min-height: 58px;
+  min-height: 55px;
   resize: none;
-  padding: 12px 13px 5px;
+  padding: 15px 15px 4px;
   overflow-y: auto;
   border: 0;
   outline: none;
   background: transparent;
   color: var(--vscode-input-foreground);
+  font-size: 13px;
   line-height: 1.45;
 }
 
 .composer textarea::placeholder {
-  color: var(--vscode-input-placeholderForeground);
+  color: var(--vscode-input-placeholderForeground, var(--omp-muted));
 }
 
 .composer-bar {
   display: flex;
-  gap: 7px;
+  min-width: 0;
+  min-height: 40px;
   align-items: center;
-  min-height: 34px;
-  padding: 4px 6px 6px 10px;
+  gap: 8px;
+  padding: 4px 7px 7px 10px;
+}
+
+.composer-plus {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  outline: none;
+  background: transparent;
+  color: var(--omp-muted);
+  cursor: pointer;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.composer-plus:hover,
+.composer-plus:focus-visible {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-editor-foreground);
+}
+
+.access-status {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--omp-accent);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.access-status svg {
+  width: 14px;
+  height: 14px;
 }
 
 .composer-status {
@@ -757,10 +764,51 @@ kbd {
   flex: 1;
   overflow: hidden;
   color: var(--omp-muted);
-  font-family: var(--vscode-editor-font-family);
   font-size: 9px;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-label {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--omp-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.send-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  outline: none;
+  background: var(--vscode-editor-foreground);
+  color: var(--vscode-editor-background);
+  cursor: pointer;
+}
+
+.send-button:hover:not([disabled]),
+.send-button:focus-visible {
+  filter: brightness(1.12);
+}
+
+.send-button[disabled] {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.send-button.stop span {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: currentColor;
 }
 
 .button {
@@ -772,61 +820,113 @@ kbd {
   padding: 4px 8px;
   border: 1px solid var(--omp-line);
   border-radius: 5px;
+  outline: none;
   background: var(--omp-surface);
   cursor: pointer;
   font-size: 10px;
 }
 
-.button:hover {
+.button:hover,
+.button:focus-visible {
   background: var(--vscode-toolbar-hoverBackground);
 }
 
-.button:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: 1px;
+.button.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--omp-muted);
 }
 
-.button.primary {
-  min-width: 62px;
-  border-color: color-mix(in srgb, var(--omp-amber) 55%, var(--omp-line));
-  background: color-mix(in srgb, var(--omp-amber) 18%, var(--omp-surface));
-  color: color-mix(in srgb, var(--omp-amber) 88%, white);
-  font-weight: 700;
+.button.quiet:hover,
+.button.quiet:focus-visible {
+  color: var(--vscode-editor-foreground);
 }
 
-.button.danger {
-  border-color: color-mix(in srgb, var(--omp-red) 45%, var(--omp-line));
-  color: var(--omp-red);
+.local-context {
+  display: flex;
+  width: min(840px, 100%);
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  margin: 7px auto 0;
+  padding: 0 13px;
+  color: var(--omp-muted);
+  font-size: 10px;
+  pointer-events: auto;
 }
 
-.button.icon {
-  width: 27px;
-  padding: 0;
+.local-context svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
 }
 
-.button[disabled] {
-  cursor: default;
-  opacity: 0.46;
+.session-path {
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 3px;
+  color: color-mix(in srgb, var(--omp-muted) 72%, transparent);
+  font-family: var(--vscode-editor-font-family);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .command-menu,
+.actions-menu,
 .search-box {
   position: absolute;
   z-index: 20;
-  right: 6px;
-  bottom: calc(100% + 7px);
-  left: 6px;
   overflow: auto;
-  max-height: min(320px, 48vh);
-  border: 1px solid var(--omp-line);
-  border-radius: 8px;
+  border: 1px solid var(--omp-line-strong);
+  border-radius: 10px;
   background: var(--vscode-editorWidget-background);
-  box-shadow: 0 14px 38px color-mix(in srgb, black 34%, transparent);
+  box-shadow: 0 14px 38px color-mix(in srgb, black 30%, transparent);
 }
 
-.command-menu[hidden],
-.search-box[hidden] {
-  display: none;
+.command-menu {
+  right: 7px;
+  bottom: calc(100% + 7px);
+  left: 7px;
+  max-height: min(320px, 48vh);
+}
+
+.actions-menu {
+  bottom: 42px;
+  left: 8px;
+  width: 220px;
+  padding: 5px;
+}
+
+.actions-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 31px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-editor-foreground);
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.actions-menu button:hover,
+.actions-menu button:focus-visible {
+  background: var(--vscode-list-hoverBackground);
+  outline: none;
+}
+
+kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--omp-line);
+  border-radius: 4px;
+  background: var(--omp-surface);
+  color: var(--omp-muted);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 9px;
 }
 
 .command {
@@ -848,7 +948,7 @@ kbd {
 }
 
 .command code {
-  color: var(--omp-amber);
+  color: var(--vscode-editor-foreground);
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
 }
@@ -862,18 +962,17 @@ kbd {
 }
 
 .search-box {
-  right: 0;
-  bottom: auto;
-  left: auto;
-  top: 62px;
-  width: min(360px, calc(100% - 24px));
-  padding: 8px;
+  top: 8px;
+  right: 10px;
+  width: min(360px, calc(100% - 20px));
+  padding: 7px;
 }
 
 .search-box input {
   width: 100%;
   padding: 7px 8px;
   border: 1px solid var(--vscode-input-border, var(--omp-line));
+  border-radius: 6px;
   outline: none;
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
@@ -885,38 +984,32 @@ kbd {
   inset: 0;
   display: grid;
   place-items: end center;
-  padding: 20px 20px 118px;
+  padding: 20px 20px 150px;
   background: color-mix(in srgb, var(--vscode-editor-background) 58%, transparent);
   backdrop-filter: blur(3px);
 }
 
-.request-layer[hidden] {
-  display: none;
-}
-
 .request-card {
   width: min(620px, 100%);
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--omp-amber) 55%, var(--omp-line));
-  border-radius: 12px 4px 12px 4px;
+  padding: 17px;
+  border: 1px solid var(--omp-line-strong);
+  border-radius: 14px;
   background: var(--vscode-editorWidget-background);
-  box-shadow: 0 18px 60px color-mix(in srgb, black 42%, transparent);
+  box-shadow: 0 18px 60px color-mix(in srgb, black 38%, transparent);
 }
 
 .request-kicker {
-  color: var(--omp-amber);
-  font-family: var(--vscode-editor-font-family);
+  color: var(--omp-muted);
   font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .request-card h2 {
   margin: 8px 0 5px;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 600;
 }
 
 .request-card p {
@@ -933,6 +1026,7 @@ kbd {
   margin-bottom: 12px;
   padding: 8px;
   border: 1px solid var(--vscode-input-border, var(--omp-line));
+  border-radius: 6px;
   outline: none;
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
@@ -950,12 +1044,10 @@ kbd {
 }
 
 .fatal-banner {
-  margin: 0 0 12px 38px;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--omp-red) 58%, var(--omp-line));
-  border-left-width: 4px;
+  border-left: 3px solid var(--omp-red);
   border-radius: 4px;
-  background: color-mix(in srgb, var(--omp-red) 9%, var(--omp-surface));
+  background: color-mix(in srgb, var(--omp-red) 8%, var(--omp-surface));
 }
 
 .fatal-banner strong {
@@ -985,50 +1077,63 @@ kbd {
 }
 
 @media (max-width: 700px) {
-  .run-rail {
-    grid-template-columns: 1fr;
-    gap: 6px;
+  .chat-header {
+    min-height: 46px;
+    padding-right: 8px;
   }
 
-  .rail-signals {
-    max-width: 100%;
-    justify-content: flex-start;
-  }
-
-  .signal.optional {
-    display: none;
+  .session-name {
+    max-width: 48vw;
   }
 
   .stream-inner {
-    width: calc(100% - 18px);
-    padding-top: 14px;
+    width: calc(100% - 26px);
+    padding-top: 22px;
+    padding-bottom: 178px;
   }
 
-  .message {
-    grid-template-columns: 22px minmax(0, 1fr);
-    gap: 7px;
-  }
-
-  .avatar {
-    width: 21px;
-    height: 21px;
-    font-size: 8px;
-  }
-
-  .tool-deck,
-  .extension-surfaces,
-  .notice-stack,
-  .agents,
-  .fatal-banner {
-    margin-left: 29px;
+  .timeline {
+    gap: 19px;
   }
 
   .composer-shell {
-    padding: 8px;
+    padding: 18px 10px 8px;
   }
 
-  .composer-bar .button.secondary {
+  .composer-status {
     display: none;
+  }
+
+  .model-label {
+    max-width: 120px;
+  }
+
+  .local-context {
+    padding: 0 10px;
+  }
+
+  .session-path {
+    display: none;
+  }
+}
+
+@media (max-width: 440px) {
+  #settings-button {
+    display: none;
+  }
+
+  .access-status span {
+    max-width: 70px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .model-label {
+    max-width: 92px;
+  }
+
+  .button.quiet {
+    padding-inline: 5px;
   }
 }
 

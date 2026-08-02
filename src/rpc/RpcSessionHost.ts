@@ -250,6 +250,20 @@ export class RpcSessionHost implements SessionHost {
       case "openDiagnosticTerminal":
         this.#openDiagnosticTerminal();
         return;
+      case "showSessions":
+        await vscode.commands.executeCommand(
+          "workbench.view.extension.oh-my-pi-sessions",
+        );
+        return;
+      case "openSettings":
+        await vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "@ext:takeoff69.oh-my-pi-vscode-sessions",
+        );
+        return;
+      case "newSession":
+        await vscode.commands.executeCommand("ohMyPiSessions.newSession");
+        return;
     }
   }
 

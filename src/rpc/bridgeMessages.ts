@@ -19,7 +19,10 @@ export type RpcWebviewMessage =
     }
   | { type: "openUrl"; uri: string }
   | { type: "showLogs" }
-  | { type: "openDiagnosticTerminal" };
+  | { type: "openDiagnosticTerminal" }
+  | { type: "showSessions" }
+  | { type: "openSettings" }
+  | { type: "newSession" };
 
 export function parseRpcWebviewMessage(
   raw: unknown,
@@ -32,6 +35,9 @@ export function parseRpcWebviewMessage(
     case "abort":
     case "showLogs":
     case "openDiagnosticTerminal":
+    case "showSessions":
+    case "openSettings":
+    case "newSession":
       return { type: raw.type };
     case "prompt":
     case "steer":

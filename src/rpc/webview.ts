@@ -68,15 +68,25 @@ let commandSelection = 0;
 const root = requireElement("app");
 root.innerHTML = `
   <main class="app">
-    <header class="run-rail" aria-label="OMP runtime">
-      <div class="identity">
-        <div class="pi-mark" aria-hidden="true">π</div>
-        <div class="identity-copy">
-          <div id="session-name" class="session-name">OMP session</div>
-          <div id="session-path" class="session-path">Starting runtime…</div>
+    <header class="chat-header">
+      <div class="chat-heading">
+        <div class="chat-title-row">
+          <span class="chat-title">Chats</span>
+          <span id="runtime-indicator" class="signal pending" aria-label="OMP runtime starting"></span>
         </div>
+        <div id="session-name" class="session-name">OMP session</div>
       </div>
-      <div id="rail-signals" class="rail-signals"></div>
+      <nav class="header-actions" aria-label="Chat actions">
+        <button id="sessions-button" class="icon-button" type="button" title="Show OMP sessions" aria-label="Show OMP sessions">
+          <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M4.5 5.5h11v8h-11zM7 3.5h6M7 15.5h6" /></svg>
+        </button>
+        <button id="settings-button" class="icon-button" type="button" title="Open OMP settings" aria-label="Open OMP settings">
+          <svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 3.3v1.4M10 15.3v1.4M3.3 10h1.4M15.3 10h1.4M5.25 5.25l1 1M13.75 13.75l1 1M14.75 5.25l-1 1M6.25 13.75l-1 1" /></svg>
+        </button>
+        <button id="new-session-button" class="icon-button" type="button" title="New OMP session" aria-label="New OMP session">
+          <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5 14.8l.6-3.1L13.3 4l2.7 2.7-7.7 7.7zM12.4 4.9l2.7 2.7M4 16h12" /></svg>
+        </button>
+      </nav>
     </header>
     <section class="workspace">
       <div id="stream" class="stream" tabindex="-1">
@@ -90,22 +100,38 @@ root.innerHTML = `
       <div class="composer-shell">
         <div class="composer">
           <div id="command-menu" class="command-menu" hidden></div>
+          <div id="actions-menu" class="actions-menu" hidden>
+            <button type="button" data-composer-action="find">Find in chat <kbd>Ctrl F</kbd></button>
+            <button type="button" data-composer-action="logs">Show OMP logs</button>
+            <button type="button" data-composer-action="terminal">Open diagnostic terminal</button>
+          </div>
           <label class="sr-only" for="composer-input">Message OMP</label>
           <textarea
             id="composer-input"
             rows="2"
-            placeholder="Message Opus · / for commands"
+            placeholder="Ask OMP anything"
             spellcheck="true"
           ></textarea>
           <div class="composer-bar">
-            <button id="logs-button" class="button icon secondary" type="button" title="Show OMP logs">≡</button>
-            <button id="terminal-button" class="button secondary" type="button" title="Open diagnostic terminal">Terminal</button>
+            <button id="actions-button" class="composer-plus" type="button" title="Chat actions" aria-label="Chat actions" aria-expanded="false">+</button>
+            <div class="access-status" title="Tool access selected by OMP project policy">
+              <svg aria-hidden="true" viewBox="0 0 18 18"><path d="M9 2.5l5 2v3.8c0 3.2-2 5.7-5 7.2-3-1.5-5-4-5-7.2V4.5z"/><path d="M7.1 8.8l1.3 1.3 2.7-2.8"/></svg>
+              <span id="access-label">Full access</span>
+            </div>
             <div id="composer-status" class="composer-status">RPC starting</div>
-            <button id="abort-button" class="button danger" type="button" hidden>Stop</button>
-            <button id="follow-button" class="button secondary" type="button" hidden>Follow up</button>
-            <button id="steer-button" class="button secondary" type="button" hidden>Steer</button>
-            <button id="send-button" class="button primary" type="button">Send ↗</button>
+            <button id="follow-button" class="button quiet" type="button" hidden>Follow up</button>
+            <button id="steer-button" class="button quiet" type="button" hidden>Steer</button>
+            <span id="model-label" class="model-label">Model pending</span>
+            <button id="abort-button" class="send-button stop" type="button" title="Stop" aria-label="Stop generation" hidden><span aria-hidden="true"></span></button>
+            <button id="send-button" class="send-button" type="button" title="Send" aria-label="Send message">
+              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M10 15V5M6 9l4-4 4 4" /></svg>
+            </button>
           </div>
+        </div>
+        <div class="local-context" title="Current OMP worktree">
+          <svg aria-hidden="true" viewBox="0 0 18 18"><rect x="2.5" y="3.5" width="13" height="9" rx="1"/><path d="M6 15h6M9 12.5V15"/></svg>
+          <span>Work locally</span>
+          <span id="session-path" class="session-path">Starting runtime…</span>
         </div>
       </div>
     </section>
@@ -119,9 +145,12 @@ const sendButton = requireButton("send-button");
 const steerButton = requireButton("steer-button");
 const followButton = requireButton("follow-button");
 const abortButton = requireButton("abort-button");
-const logsButton = requireButton("logs-button");
-const terminalButton = requireButton("terminal-button");
+const actionsButton = requireButton("actions-button");
+const sessionsButton = requireButton("sessions-button");
+const settingsButton = requireButton("settings-button");
+const newSessionButton = requireButton("new-session-button");
 const commandMenu = requireElement("command-menu");
+const actionsMenu = requireElement("actions-menu");
 const requestLayer = requireElement("request-layer");
 const searchBox = requireElement("search-box");
 const searchInput = requireInput("search-input");
@@ -193,10 +222,24 @@ sendButton.addEventListener("click", () => submit("prompt"));
 steerButton.addEventListener("click", () => submit("steer"));
 followButton.addEventListener("click", () => submit("follow_up"));
 abortButton.addEventListener("click", () => post({ type: "abort" }));
-logsButton.addEventListener("click", () => post({ type: "showLogs" }));
-terminalButton.addEventListener("click", () =>
-  post({ type: "openDiagnosticTerminal" }),
-);
+sessionsButton.addEventListener("click", () => post({ type: "showSessions" }));
+settingsButton.addEventListener("click", () => post({ type: "openSettings" }));
+newSessionButton.addEventListener("click", () => post({ type: "newSession" }));
+actionsButton.addEventListener("click", () => {
+  actionsMenu.hidden = !actionsMenu.hidden;
+  actionsButton.setAttribute("aria-expanded", String(!actionsMenu.hidden));
+});
+actionsMenu.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const action = target.closest<HTMLElement>("[data-composer-action]")?.dataset
+    .composerAction;
+  if (action === "find") toggleSearch(true);
+  if (action === "logs") post({ type: "showLogs" });
+  if (action === "terminal") post({ type: "openDiagnosticTerminal" });
+  actionsMenu.hidden = true;
+  actionsButton.setAttribute("aria-expanded", "false");
+});
 searchInput.addEventListener("input", () => {
   const query = searchInput.value;
   const find = (window as WindowWithFind).find;
@@ -210,9 +253,16 @@ document.addEventListener(
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
       event.preventDefault();
       toggleSearch(true);
-    } else if (event.key === "Escape" && !searchBox.hidden) {
-      event.preventDefault();
-      toggleSearch(false);
+    } else if (event.key === "Escape") {
+      if (!searchBox.hidden) {
+        event.preventDefault();
+        toggleSearch(false);
+      } else if (!actionsMenu.hidden) {
+        event.preventDefault();
+        actionsMenu.hidden = true;
+        actionsButton.setAttribute("aria-expanded", "false");
+        composer.focus();
+      }
     }
   },
   true,
@@ -221,6 +271,14 @@ document.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) {
     return;
+  }
+  if (
+    !actionsMenu.hidden &&
+    !target.closest("#actions-menu") &&
+    !target.closest("#actions-button")
+  ) {
+    actionsMenu.hidden = true;
+    actionsButton.setAttribute("aria-expanded", "false");
   }
   const anchor = target.closest("a");
   if (anchor instanceof HTMLAnchorElement) {
@@ -244,7 +302,13 @@ document.addEventListener("click", (event) => {
       `[data-tool-details="${cssEscape(toolToggle.dataset.toolToggle ?? "")}"]`,
     );
     if (details) {
-      details.hidden = !details.hidden;
+      const opening = details.hidden;
+      details.hidden = !opening;
+      if (opening && !userPinnedScroll) {
+        requestAnimationFrame(() => {
+          stream.scrollTop = stream.scrollHeight;
+        });
+      }
     }
   }
 });
@@ -329,60 +393,46 @@ function renderRail(): void {
     state.runtime.sessionName ||
     state.runtime.branch ||
     "OMP session";
-  requireElement("session-path").textContent = [
-    state.runtime.branch,
-    state.runtime.cwd,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const sessionPath = requireElement("session-path");
+  sessionPath.textContent = state.runtime.branch || "Current workspace";
+  sessionPath.title = state.runtime.cwd ?? "";
 
-  const model = [
-    state.runtime.model?.provider,
-    state.runtime.model?.id,
-  ]
-    .filter(Boolean)
-    .join("/");
+  const model = state.runtime.model?.id || "Model pending";
+  requireElement("model-label").textContent = state.runtime.thinkingLevel
+    ? `${model} · ${state.runtime.thinkingLevel}`
+    : model;
+  requireElement("access-label").textContent =
+    state.runtime.kind === "readonly"
+      ? "Read only"
+      : state.runtime.kind === "loop"
+        ? "Loop control"
+        : "Full access";
+
   const context = state.runtime.contextUsage;
   const contextPercent =
     context?.percent === undefined || context.percent === null
-      ? "—"
+      ? "unknown"
       : `${normalizePercent(context.percent)}%`;
-  const signals = [
-    signal(
-      state.runtime.transport,
-      "RPC",
-      state.runtime.transport,
-    ),
-    signal(
-      state.runtime.parity,
-      "Parity",
-      state.runtime.parity,
-    ),
-    signal(
-      state.runtime.isStreaming ? "running" : "ready",
-      model || "model pending",
-      state.runtime.thinkingLevel || "—",
-    ),
-    signal(
-      "ready",
-      "Advisor",
-      state.runtime.advisorLabel || "project policy",
-      "optional",
-    ),
-    signal(
-      state.runtime.isCompacting ? "running" : "ready",
-      "Context",
-      contextPercent,
-      "optional",
-    ),
-    signal(
-      state.runtime.queuedMessageCount > 0 ? "pending" : "ready",
-      "Queue",
-      String(state.runtime.queuedMessageCount),
-      "optional",
-    ),
-  ];
-  requireElement("rail-signals").innerHTML = signals.join("");
+  const blocked =
+    state.runtime.transport === "failed" ||
+    state.runtime.transport === "exited" ||
+    state.runtime.parity === "failed";
+  const pending =
+    state.runtime.transport === "starting" || state.runtime.parity === "pending";
+  const indicator = requireElement("runtime-indicator");
+  indicator.className = `signal ${
+    blocked ? "failed" : pending ? "pending" : state.runtime.isStreaming ? "running" : "passed"
+  }`;
+  const runtimeSummary = [
+    `RPC ${state.runtime.transport}`,
+    `parity ${state.runtime.parity}`,
+    `${model}${state.runtime.thinkingLevel ? ` · ${state.runtime.thinkingLevel}` : ""}`,
+    `advisor ${state.runtime.advisorLabel || "project policy"}`,
+    `context ${contextPercent}`,
+    `${state.runtime.queuedMessageCount} queued`,
+  ].join(" · ");
+  indicator.title = runtimeSummary;
+  indicator.setAttribute("aria-label", runtimeSummary);
 }
 
 function renderTimeline(): void {
@@ -439,21 +489,12 @@ function renderEmpty(): string {
         ? "Read-only session"
         : "OMP session";
   return `
-    <section class="empty-state">
-      <div class="empty-card">
-        <div class="empty-kicker">${escapeHtml(mode)} · structured RPC</div>
-        <h1>One worktree. One clear line of flight.</h1>
-        <p>
-          OMP remains the runtime. This tab renders its model turns, advisor interventions,
-          tool calls, and Loop control without parsing terminal text.
-        </p>
-        <div class="shortcut-row">
-          <kbd>Enter</kbd><span>send</span>
-          <kbd>Shift + Enter</kbd><span>newline</span>
-          <kbd>Ctrl + Enter</kbd><span>steer</span>
-          <kbd>Esc</kbd><span>stop</span>
-        </div>
+    <section class="empty-state" aria-label="${escapeAttr(mode)} ready">
+      <div class="empty-mark" aria-hidden="true">
+        <span>π</span>
+        <i></i><i></i><i></i>
       </div>
+      <span class="sr-only">${escapeHtml(mode)} ready</span>
     </section>
   `;
 }
@@ -470,24 +511,20 @@ function renderMessage(message: UiMessage): string {
     advisory: "Advisor",
     custom: message.customType || "OMP",
   }[message.role];
-  const avatar = {
-    user: "YOU",
-    assistant: "π",
-    developer: "SYS",
-    toolResult: "TOOL",
-    advisory: "SOL",
-    custom: "OMP",
-  }[message.role];
   const content = message.content.map(renderContent).join("");
+  const showMeta =
+    message.role !== "user" &&
+    (message.role !== "assistant" || Boolean(message.model) || message.streaming);
   return `
     <article class="message ${message.role}">
-      <div class="avatar" aria-hidden="true">${escapeHtml(avatar)}</div>
       <div class="message-body">
-        <div class="message-meta">
-          <strong>${escapeHtml(label)}</strong>
-          ${message.model ? `<span>${escapeHtml(message.model)}</span>` : ""}
-          ${message.streaming ? "<span>streaming</span>" : ""}
-        </div>
+        ${
+          showMeta
+            ? `<div class="message-meta"><strong>${escapeHtml(label)}</strong>${
+                message.model ? `<span>${escapeHtml(message.model)}</span>` : ""
+              }${message.streaming ? "<span>working</span>" : ""}</div>`
+            : ""
+        }
         <div class="content">
           ${content}
           ${message.streaming ? '<span class="streaming-caret" aria-label="Streaming"></span>' : ""}
@@ -650,18 +687,21 @@ function renderComposer(): void {
   composer.disabled = blocked;
   sendButton.disabled = blocked || !composer.value.trim();
   const streaming = state.runtime.isStreaming;
+  sendButton.hidden = streaming;
   steerButton.hidden = !streaming;
   followButton.hidden = !streaming;
   abortButton.hidden = !streaming;
   requireElement("composer-status").textContent = blocked
-    ? "Session blocked · inspect logs or open diagnostic terminal"
+    ? "Session blocked"
     : state.runtime.isCompacting
       ? "Compacting context"
       : streaming
-        ? "Opus is running · Enter queues · Ctrl+Enter steers"
+        ? "Working"
         : state.runtime.parity === "pending"
-          ? "Checking exact runtime parity"
-          : `${state.runtime.tools.length} tools · ${state.runtime.queuedMessageCount} queued`;
+          ? "Checking runtime"
+          : state.runtime.queuedMessageCount > 0
+            ? `${state.runtime.queuedMessageCount} queued`
+            : "";
 }
 
 function renderRequest(): void {
@@ -843,21 +883,6 @@ function toggleSearch(open: boolean): void {
     searchInput.value = "";
     composer.focus();
   }
-}
-
-function signal(
-  status: string,
-  label: string,
-  value: string,
-  extraClass = "",
-): string {
-  return `
-    <span class="signal ${escapeAttr(status)} ${extraClass}">
-      <span class="signal-dot"></span>
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-    </span>
-  `;
 }
 
 function post(message: unknown): void {

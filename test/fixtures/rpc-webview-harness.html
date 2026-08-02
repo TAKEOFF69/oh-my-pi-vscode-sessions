@@ -163,6 +163,13 @@
           }
         }
       ];
+      if (new URLSearchParams(window.location.search).has("empty")) {
+        window.__OMP_RPC_FIXTURE__ = window.__OMP_RPC_FIXTURE__.slice(0, 4);
+        window.__OMP_RPC_FIXTURE__[0] = {
+          ...window.__OMP_RPC_FIXTURE__[0],
+          kind: "work"
+        };
+      }
     </script>
     <script src="../../dist/rpc-webview.js"></script>
   </body>

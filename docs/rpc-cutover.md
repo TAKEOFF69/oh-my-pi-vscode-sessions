@@ -18,19 +18,20 @@ command. It is never an automatic fallback and never runs beside an RPC session.
 
 ## UX direction
 
-The editor tab is an operational flight recorder rather than a generic chat page:
+The editor tab follows Codex's quiet native-chat hierarchy while retaining OMP evidence:
 
-- compact run rail for model, effort, worktree, context, queue, and advisor lock;
-- readable conversation stream with restrained user/assistant separation;
-- collapsible thinking and tool execution cards;
-- native prompt composer with send, steer, follow-up, and abort;
-- inline OMP notices, retries, compaction, TTSR, and subagent progress;
-- request cards for OMP extension confirmations, selections, and text/editor input;
+- compact `Chats` header for session directory, settings, and duplicate-gated New Session;
+- flat readable conversation canvas with restrained user/assistant separation;
+- collapsible thinking and compact expandable tool rows;
+- bottom-docked rounded composer with real access, model, effort, send, steer, follow-up, and abort;
+- worktree/branch identity below composer rather than a persistent technical rail;
+- inline OMP notices, retries, compaction, TTSR, subagent progress, and extension requests;
 - direct file and URL handoff to VS Code;
 - visible transport and parity failures with no terminal fallback.
 
-The surface follows VS Code theme variables and editor typography. Amber is reserved for
-active execution and intervention; red is reserved for real failures.
+Runtime status stays available through compact header indicator, composer state, and tooltips. Flat
+canvas and muted VS Code theme variables dominate; yellow marks access/execution, red marks real
+failures. Native editor tabs remain intentional multi-session boundary.
 
 ## Runtime architecture
 
@@ -112,18 +113,18 @@ containment, or hash mismatch fails closed.
 
 | OMP capability | RPC surface |
 | --- | --- |
-| Streaming messages and thinking | Structured message cards |
-| Tool calls and partial results | Live expandable tool cards |
+| Streaming messages and thinking | Text-first conversation + collapsible reasoning |
+| Tool calls and partial results | Compact expandable tool rows |
 | Skills and slash commands | Available-command menu + normal prompt path |
 | Advisor advice | Native advisory cards emitted by OMP |
 | Steering/follow-up/abort | Composer controls |
 | Compaction/retry/TTSR | Timeline notices |
-| Todos | Run rail and phase list |
+| Todos | Timeline notices and phase list |
 | Subagents | Lifecycle/progress cards |
 | Extension `select`/`confirm`/`input`/`editor` | Inline request cards |
-| Extension status/widgets/notifications | Run rail and notices |
+| Extension status/widgets/notifications | Timeline status and notices |
 | Session history | Bounded `get_messages_page` traversal with documented busy/stale fallback |
-| Model/thinking/context state | Run rail |
+| Model/thinking/context state | Composer and compact header status |
 | Bash requiring real interaction | Explicit diagnostic terminal |
 
 OMP custom TUI-only components are not fabricated. A project relying on unsupported custom UI

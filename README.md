@@ -34,6 +34,11 @@ One VS Code window can therefore contain:
 - several implementation sessions in separate worktrees;
 - ordinary source editors alongside all of them.
 
+Structured tabs use a quiet Codex-like surface: flat conversation canvas, compact session actions,
+text-first messages, expandable OMP evidence, and a bottom composer showing real project access,
+model/effort, and current worktree. Native editor tabs and the OMP Sessions activity view remain
+the multi-session directory; the UI does not duplicate or weaken worktree ownership.
+
 For Dzialkopedia, standard session exposes narrow `loop_handoff` tool but never
 direct Loop lifecycle or dispatch tools. Once user and Opus decide Loop is right,
 tool opens dedicated controller worktree, starts locked RPC profile, validates exact
@@ -165,7 +170,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.1.3.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.2.0.vsix --force
 ```
 
 ## Current boundary
