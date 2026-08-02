@@ -5,6 +5,15 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-08-02
+
+### Fixed
+
+- Composer Send control now enables immediately after typed or programmatic draft changes and
+  disables again after submission.
+- Browser proof now clicks Send and verifies exact prompt delivery in desktop, narrow, and empty
+  session layouts.
+
 ## [2.2.0] - 2026-08-02
 
 ### Changed

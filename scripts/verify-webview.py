@@ -57,6 +57,25 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
 
     screenshot = OUTPUT / f"rpc-webview-{name}.png"
     page.screenshot(path=str(screenshot), full_page=True)
+
+    page.evaluate(
+        """() => {
+          window.__OMP_TEST_POSTS__ = [];
+          window.addEventListener("omp-fixture-post", (event) => {
+            window.__OMP_TEST_POSTS__.push(event.detail);
+          });
+        }"""
+    )
+    page.locator("#composer-input").fill("send button regression proof")
+    assert page.locator("#send-button").is_enabled(), (
+        f"{name} send button stayed disabled after typing"
+    )
+    page.locator("#send-button").click()
+    posted = page.evaluate("() => window.__OMP_TEST_POSTS__")
+    assert {
+        "type": "prompt",
+        "message": "send button regression proof",
+    } in posted, f"{name} send click did not post prompt: {posted}"
     return screenshot
 
 

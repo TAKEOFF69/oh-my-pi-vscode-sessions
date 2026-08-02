@@ -174,6 +174,7 @@ composer.addEventListener("input", () => {
   vscode.setState({ draft: composer.value });
   resizeComposer();
   renderCommandMenu();
+  renderComposer();
 });
 composer.addEventListener("keydown", (event) => {
   const commandsVisible = !commandMenu.hidden;
@@ -334,6 +335,7 @@ function receiveHostMessage(raw: unknown): void {
       composer.value = String(raw.text ?? "");
       vscode.setState({ draft: composer.value });
       resizeComposer();
+      renderComposer();
       composer.focus();
       return;
     case "restoreDraft": {
@@ -344,6 +346,7 @@ function receiveHostMessage(raw: unknown): void {
           : restored;
         vscode.setState({ draft: composer.value });
         resizeComposer();
+        renderComposer();
         composer.focus();
       }
       return;
@@ -841,6 +844,7 @@ function chooseCommand(index: number): void {
   vscode.setState({ draft: composer.value });
   commandMenu.hidden = true;
   resizeComposer();
+  renderComposer();
   composer.focus();
 }
 
@@ -854,6 +858,7 @@ function submit(type: "prompt" | "steer" | "follow_up"): void {
   vscode.setState({ draft: "" });
   resizeComposer();
   commandMenu.hidden = true;
+  renderComposer();
   userPinnedScroll = false;
 }
 
@@ -866,6 +871,7 @@ function insertText(text: string): void {
   composer.setSelectionRange(caret, caret);
   vscode.setState({ draft: composer.value });
   resizeComposer();
+  renderComposer();
   composer.focus();
 }
 
