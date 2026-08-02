@@ -570,17 +570,8 @@ function updateMessageSlot(messages: UiMessage[]): void {
 }
 
 function accessLabel(): string {
-  if (state.runtime.kind === "readonly") {
-    return "Read only";
-  }
-  if (state.runtime.kind === "loop") {
-    return "Loop control";
-  }
-  if (
-    state.runtime.parityRequired === true &&
-    state.runtime.parity === "passed"
-  ) {
-    return "Full access";
+  if (state.runtime.parity === "failed") {
+    return "Access blocked";
   }
   if (
     state.runtime.parityRequired === true &&
@@ -588,8 +579,16 @@ function accessLabel(): string {
   ) {
     return "Checking access";
   }
-  if (state.runtime.parity === "failed") {
-    return "Access blocked";
+  if (state.runtime.parityRequired === true) {
+    if (state.runtime.kind === "readonly") {
+      return "Read only";
+    }
+    if (state.runtime.kind === "loop") {
+      return "Loop control";
+    }
+    if (state.runtime.parity === "passed") {
+      return "Full access";
+    }
   }
   return "Custom access";
 }
@@ -618,7 +617,7 @@ function renderMessage(message: UiMessage): string {
   }
   const label = {
     user: "You",
-    assistant: "Opus",
+    assistant: "Assistant",
     developer: "Runtime",
     toolResult: "Tool",
     advisory: "Advisor",

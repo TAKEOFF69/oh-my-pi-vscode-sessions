@@ -173,6 +173,20 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     )
     dispatch_frame(page, {"type": "parity", "ok": True})
     page.get_by_text("Custom access", exact=True).wait_for()
+    dispatch_frame(
+        page,
+        {
+            "type": "bootstrap",
+            "cwd": "C:\\worktrees\\blocked-loop",
+            "kind": "loop",
+            "parityRequired": True,
+        },
+    )
+    dispatch_frame(
+        page,
+        {"type": "parity", "ok": False, "detail": "proof failure"},
+    )
+    page.get_by_text("Access blocked", exact=True).wait_for()
     return screenshot
 
 
