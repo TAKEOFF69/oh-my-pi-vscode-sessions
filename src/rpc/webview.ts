@@ -64,6 +64,11 @@ let state = createInitialWebviewState();
 let renderPending = false;
 let userPinnedScroll = false;
 let commandSelection = 0;
+let timelineSignature = "";
+let renderedRequestId: string | undefined;
+const renderedMessages = new Map<string, UiMessage>();
+const renderedSlotMarkup = new Map<string, string>();
+const expandedToolIds = new Set<string>();
 
 const root = requireElement("app");
 root.innerHTML = `
@@ -305,6 +310,14 @@ document.addEventListener("click", (event) => {
     if (details) {
       const opening = details.hidden;
       details.hidden = !opening;
+      const toolId = toolToggle.dataset.toolToggle;
+      if (toolId) {
+        if (opening) {
+          expandedToolIds.add(toolId);
+        } else {
+          expandedToolIds.delete(toolId);
+        }
+      }
       if (opening && !userPinnedScroll) {
         requestAnimationFrame(() => {
           stream.scrollTop = stream.scrollHeight;
@@ -404,12 +417,7 @@ function renderRail(): void {
   requireElement("model-label").textContent = state.runtime.thinkingLevel
     ? `${model} · ${state.runtime.thinkingLevel}`
     : model;
-  requireElement("access-label").textContent =
-    state.runtime.kind === "readonly"
-      ? "Read only"
-      : state.runtime.kind === "loop"
-        ? "Loop control"
-        : "Full access";
+  requireElement("access-label").textContent = accessLabel();
 
   const context = state.runtime.contextUsage;
   const contextPercent =
@@ -440,48 +448,150 @@ function renderRail(): void {
 
 function renderTimeline(): void {
   const shouldFollow = !userPinnedScroll;
-  const chunks: string[] = [];
-  if (state.runtime.parity === "failed") {
-    chunks.push(`
+  const parityBanner =
+    state.runtime.parity === "failed"
+      ? `
       <section class="fatal-banner" role="alert">
         <strong>Runtime parity blocked this session</strong>
         <pre>${escapeHtml(state.runtime.parityDetail || "Unknown parity failure")}</pre>
       </section>
-    `);
-  }
-
-  if (
+    `
+      : "";
+  const empty =
     state.messages.length === 0 &&
     state.tools.length === 0 &&
-    state.notices.length === 0
-  ) {
-    chunks.push(renderEmpty());
-  } else {
-    chunks.push('<div class="timeline">');
-    if (
-      Object.keys(state.statuses).length > 0 ||
-      Object.keys(state.widgets).length > 0
-    ) {
-      chunks.push(renderExtensionSurfaces());
-    }
-    if (state.notices.length > 0) {
-      chunks.push(renderNotices());
-    }
-    for (const message of state.messages) {
-      chunks.push(renderMessage(message));
-    }
-    if (state.tools.length > 0) {
-      chunks.push(renderTools(state.tools.slice(-12)));
-    }
-    if (state.subagents.length > 0) {
-      chunks.push(renderAgents());
-    }
-    chunks.push("</div>");
+    state.notices.length === 0;
+  const nextSignature = empty
+    ? `empty:${parityBanner}:${state.runtime.kind ?? ""}`
+    : `content:${parityBanner}`;
+  if (timelineSignature !== nextSignature) {
+    streamInner.innerHTML = empty
+      ? `${parityBanner}${renderEmpty()}`
+      : `${parityBanner}
+        <div class="timeline">
+          <div class="timeline-slot" data-timeline-slot="extensions"></div>
+          <div class="timeline-slot" data-timeline-slot="notices"></div>
+          <div class="timeline-slot messages" data-timeline-slot="messages"></div>
+          <div class="timeline-slot" data-timeline-slot="tools"></div>
+          <div class="timeline-slot" data-timeline-slot="agents"></div>
+        </div>`;
+    timelineSignature = nextSignature;
+    renderedMessages.clear();
+    renderedSlotMarkup.clear();
   }
-  streamInner.innerHTML = chunks.join("");
+  if (!empty) {
+    updateTimelineSlot(
+      "extensions",
+      Object.keys(state.statuses).length > 0 ||
+        Object.keys(state.widgets).length > 0
+        ? renderExtensionSurfaces()
+        : "",
+    );
+    updateTimelineSlot(
+      "notices",
+      state.notices.length > 0 ? renderNotices() : "",
+    );
+    updateMessageSlot(
+      state.messages.filter(
+        (message) => message.role !== "toolResult" || message.isError,
+      ),
+    );
+    updateTimelineSlot(
+      "tools",
+      state.tools.length > 0 ? renderTools(state.tools.slice(-12)) : "",
+    );
+    updateTimelineSlot(
+      "agents",
+      state.subagents.length > 0 ? renderAgents() : "",
+    );
+  }
   if (shouldFollow) {
     stream.scrollTop = stream.scrollHeight;
   }
+}
+
+function updateTimelineSlot(name: string, markup: string): void {
+  if (renderedSlotMarkup.get(name) === markup) {
+    return;
+  }
+  const slot = streamInner.querySelector<HTMLElement>(
+    `[data-timeline-slot="${name}"]`,
+  );
+  if (!slot) {
+    return;
+  }
+  slot.innerHTML = markup;
+  renderedSlotMarkup.set(name, markup);
+}
+
+function updateMessageSlot(messages: UiMessage[]): void {
+  const slot = streamInner.querySelector<HTMLElement>(
+    '[data-timeline-slot="messages"]',
+  );
+  if (!slot) {
+    return;
+  }
+  const currentKeys = Array.from(
+    slot.querySelectorAll<HTMLElement>(":scope > [data-message-key]"),
+  ).map((element) => element.dataset.messageKey ?? "");
+  const nextKeys = messages.map((message) => message.key);
+  const keepsPrefix = currentKeys.every(
+    (key, index) => nextKeys[index] === key,
+  );
+  if (
+    !keepsPrefix ||
+    currentKeys.length > nextKeys.length ||
+    (currentKeys.length === 0 && messages.length > 1)
+  ) {
+    slot.innerHTML = messages.map(renderMessage).join("");
+    renderedMessages.clear();
+    for (const message of messages) {
+      renderedMessages.set(message.key, message);
+    }
+    return;
+  }
+  for (let index = 0; index < currentKeys.length; index += 1) {
+    const message = messages[index];
+    if (renderedMessages.get(message.key) === message) {
+      continue;
+    }
+    const element = slot.querySelector<HTMLElement>(
+      `:scope > [data-message-key="${cssEscape(message.key)}"]`,
+    );
+    if (element) {
+      element.outerHTML = renderMessage(message);
+    }
+    renderedMessages.set(message.key, message);
+  }
+  for (const message of messages.slice(currentKeys.length)) {
+    slot.insertAdjacentHTML("beforeend", renderMessage(message));
+    renderedMessages.set(message.key, message);
+  }
+}
+
+function accessLabel(): string {
+  if (state.runtime.kind === "readonly") {
+    return "Read only";
+  }
+  if (state.runtime.kind === "loop") {
+    return "Loop control";
+  }
+  if (
+    state.runtime.parityRequired === true &&
+    state.runtime.parity === "passed"
+  ) {
+    return "Full access";
+  }
+  if (
+    state.runtime.parityRequired === true &&
+    state.runtime.parity === "pending"
+  ) {
+    return "Checking access";
+  }
+  if (state.runtime.parity === "failed") {
+    return "Access blocked";
+  }
+  return "Custom access";
 }
 
 function renderEmpty(): string {
@@ -519,7 +629,7 @@ function renderMessage(message: UiMessage): string {
     message.role !== "user" &&
     (message.role !== "assistant" || Boolean(message.model) || message.streaming);
   return `
-    <article class="message ${message.role}">
+    <article class="message ${message.role}" data-message-key="${escapeAttr(message.key)}">
       <div class="message-body">
         ${
           showMeta
@@ -592,7 +702,7 @@ function renderTool(tool: UiToolRun): string {
         </span>
         <span class="tool-status">${escapeHtml(tool.status)}</span>
       </button>
-      <div class="tool-details" data-tool-details="${escapeAttr(tool.id)}" hidden>
+      <div class="tool-details" data-tool-details="${escapeAttr(tool.id)}"${expandedToolIds.has(tool.id) ? "" : " hidden"}>
         ${
           filePath
             ? `<div class="tool-actions"><button class="button" type="button" data-open-file="${escapeAttr(filePath)}">Open file</button></div>`
@@ -687,15 +797,20 @@ function renderComposer(): void {
     state.runtime.transport === "failed" ||
     state.runtime.transport === "exited" ||
     state.runtime.parity === "failed";
+  const ready = promptReady();
   composer.disabled = blocked;
-  sendButton.disabled = blocked || !composer.value.trim();
+  sendButton.disabled = blocked || !ready || !composer.value.trim();
   const streaming = state.runtime.isStreaming;
   sendButton.hidden = streaming;
   steerButton.hidden = !streaming;
   followButton.hidden = !streaming;
   abortButton.hidden = !streaming;
+  steerButton.disabled = !ready || !composer.value.trim();
+  followButton.disabled = !ready || !composer.value.trim();
   requireElement("composer-status").textContent = blocked
     ? "Session blocked"
+    : state.runtime.transport === "starting"
+      ? "Starting OMP"
     : state.runtime.isCompacting
       ? "Compacting context"
       : streaming
@@ -707,15 +822,28 @@ function renderComposer(): void {
             : "";
 }
 
+function promptReady(): boolean {
+  return (
+    state.runtime.transport === "ready" &&
+    (state.runtime.parity === "passed" ||
+      state.runtime.parity === "not-required")
+  );
+}
+
 function renderRequest(): void {
   const request = state.requests[0];
   if (!request) {
     requestLayer.hidden = true;
     requestLayer.innerHTML = "";
+    renderedRequestId = undefined;
+    return;
+  }
+  if (renderedRequestId === request.id && !requestLayer.hidden) {
     return;
   }
   requestLayer.hidden = false;
   requestLayer.innerHTML = renderRequestCard(request);
+  renderedRequestId = request.id;
   const input = requestLayer.querySelector<
     HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
   >("[data-request-value]");
@@ -850,7 +978,7 @@ function chooseCommand(index: number): void {
 
 function submit(type: "prompt" | "steer" | "follow_up"): void {
   const message = composer.value.trim();
-  if (!message) {
+  if (!message || !promptReady()) {
     return;
   }
   post({ type, message });

@@ -637,6 +637,7 @@ export class RpcSessionHost implements SessionHost {
     message: string,
   ): Promise<void> {
     if (!this.#parityPassed || this.#parityFailed) {
+      await this.#post({ type: "restoreDraft", text: message });
       await vscode.window.showErrorMessage(
         "OMP Sessions: prompt blocked until exact RPC parity passes.",
       );
@@ -644,6 +645,7 @@ export class RpcSessionHost implements SessionHost {
     }
     const rpc = this.#rpc;
     if (!rpc?.running) {
+      await this.#post({ type: "restoreDraft", text: message });
       await vscode.window.showErrorMessage(
         "OMP Sessions: RPC runtime is not running.",
       );

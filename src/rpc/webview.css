@@ -248,6 +248,15 @@ button {
   gap: 22px;
 }
 
+.timeline-slot:empty {
+  display: none;
+}
+
+.timeline-slot.messages {
+  display: grid;
+  gap: 22px;
+}
+
 .message {
   min-width: 0;
   animation: enter 150ms ease-out both;
@@ -1093,6 +1102,10 @@ kbd {
   }
 
   .timeline {
+    gap: 19px;
+  }
+
+  .timeline-slot.messages {
     gap: 19px;
   }
 
