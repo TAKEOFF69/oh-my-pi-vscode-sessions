@@ -33,7 +33,21 @@ test("webview reducer hydrates state and exact runtime surface", () => {
   assert.equal(state.runtime.model?.id, "claude-opus-5");
   assert.equal(state.runtime.thinkingLevel, "max");
   assert.equal(state.runtime.cwd, "C:\\work\\arc");
+  assert.equal(state.runtime.parityRequired, true);
   assert.deepEqual(state.runtime.tools, ["read", "edit"]);
+});
+
+test("webview reducer keeps generic runtime parity explicitly untrusted", () => {
+  let state = createInitialWebviewState();
+  state = applyHostFrame(state, {
+    type: "bootstrap",
+    kind: "work",
+    parityRequired: false,
+  });
+  state = applyHostFrame(state, { type: "parity", ok: true });
+
+  assert.equal(state.runtime.parityRequired, false);
+  assert.equal(state.runtime.parity, "passed");
 });
 
 test("webview reducer streams messages and tool execution", () => {

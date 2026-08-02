@@ -20,7 +20,7 @@ parallel worktrees, parity checks, advisor events, tool evidence, and session te
 | Conversation | Text-first, narrow readable column, little permanent chrome | Remove avatar column and persistent role labels; retain subtle user/advisor distinctions | shared-with-functional-overrides |
 | Tool activity | Compact action rows; detail only on demand | One-line tool header with expandable result | shared-identical |
 | Composer | Rounded bordered field docked near bottom | Rounded composer with message field and bottom control row | shared-identical |
-| Composer left controls | Plus action and access state | Plus menu for logs/diagnostic terminal/find; policy label from session kind | shared-with-functional-overrides |
+| Composer left controls | Plus action and access state | Plus menu for logs/diagnostic terminal/find; exact Dzialki policy label or honest generic `Custom access` | shared-with-functional-overrides |
 | Composer right controls | Model label and circular send/stop button | Live OMP model/effort label and circular send/stop control | shared-identical |
 | Local context footer | `Work locally` row | Branch/worktree row below composer | shared-with-real-data |
 | Recent chat overlay | Searchable saved chat list | Native OMP Sessions sidebar remains session directory | production deviation |
@@ -31,7 +31,7 @@ parallel worktrees, parity checks, advisor events, tool evidence, and session te
 | --- | --- | --- |
 | Session name | OMP `session_info_update` / launch label | runtime-real |
 | Model and effort | OMP `get_state` and config events | runtime-real |
-| Access mode | Extension-selected session kind | runtime-real |
+| Access mode | Session kind plus exact-parity state; generic unverified profiles say `Custom access` | runtime-real |
 | Branch and directory | Extension launch specification | runtime-real |
 | Context and queue state | OMP `get_state` | runtime-real |
 | Messages, tools, advisor, notices, subagents | OMP RPC frames | runtime-real |
@@ -56,6 +56,10 @@ fact. Test harness values remain fixtures only.
 - Empty state and populated conversation both render.
 - Composer remains keyboard-operable; action menu, search, tool expansion, send, steer/follow-up,
   abort, requests, and editor-context insertion remain functional.
+- Startup drafts cannot submit before transport/parity readiness, and request-card input survives
+  unrelated RPC frames.
+- Streaming updates patch changed message nodes instead of rebuilding full history; expanded tool
+  evidence remains open across later frames.
 - Screenshot inspection confirms flat canvas, compact header, readable content, bottom composer,
   and local context row match reference hierarchy.
 

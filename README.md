@@ -170,7 +170,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.2.0.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.2.1.vsix --force
 ```
 
 ## Current boundary

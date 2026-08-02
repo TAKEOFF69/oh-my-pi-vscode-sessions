@@ -9,6 +9,16 @@ HARNESS = ROOT / "test" / "fixtures" / "rpc-webview-harness.html"
 OUTPUT = Path(gettempdir()) / "omp-rpc-ui-proof"
 
 
+def dispatch_frame(page, frame: dict) -> None:
+    page.evaluate(
+        """(frame) => new Promise((resolve) => {
+          window.dispatchEvent(new CustomEvent("omp-fixture-frame", { detail: frame }));
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        })""",
+        frame,
+    )
+
+
 def verify_view(page, name: str, *, empty: bool = False) -> Path:
     errors: list[str] = []
     page.on(
@@ -57,7 +67,199 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
 
     screenshot = OUTPUT / f"rpc-webview-{name}.png"
     page.screenshot(path=str(screenshot), full_page=True)
+
+    page.evaluate(
+        """() => {
+          window.__OMP_TEST_POSTS__ = [];
+          window.addEventListener("omp-fixture-post", (event) => {
+            window.__OMP_TEST_POSTS__.push(event.detail);
+          });
+        }"""
+    )
+    dispatch_frame(
+        page,
+        {
+            "type": "bootstrap",
+            "cwd": "C:\\worktrees\\startup-proof",
+            "branch": "wip/startup-proof",
+            "kind": "work",
+            "parityRequired": True,
+        },
+    )
+    dispatch_frame(page, {"type": "transport", "status": "starting"})
+    page.locator("#composer-input").fill("send button regression proof")
+    assert page.locator("#send-button").is_disabled(), (
+        f"{name} send button enabled before runtime readiness"
+    )
+    page.locator("#composer-input").press("Enter")
+    assert page.locator("#composer-input").input_value() == (
+        "send button regression proof"
+    ), f"{name} startup draft was cleared"
+    assert page.evaluate("() => window.__OMP_TEST_POSTS__") == [], (
+        f"{name} posted prompt before runtime readiness"
+    )
+    dispatch_frame(page, {"type": "parity", "ok": True})
+    dispatch_frame(page, {"type": "transport", "status": "ready"})
+    assert page.locator("#send-button").is_enabled(), (
+        f"{name} send button stayed disabled after typing"
+    )
+    page.locator("#send-button").click()
+    posted = page.evaluate("() => window.__OMP_TEST_POSTS__")
+    assert {
+        "type": "prompt",
+        "message": "send button regression proof",
+    } in posted, f"{name} send click did not post prompt: {posted}"
+
+    if not empty:
+        assert page.locator("[data-tool-details='tool-verify']").is_visible()
+        dispatch_frame(
+            page,
+            {
+                "type": "rpc",
+                "frame": {
+                    "type": "notice",
+                    "level": "info",
+                    "source": "proof",
+                    "message": "later frame",
+                },
+            },
+        )
+        assert page.locator("[data-tool-details='tool-verify']").is_visible(), (
+            f"{name} expanded tool evidence collapsed after later frame"
+        )
+
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "extension_ui_request",
+                "id": f"request-{name}",
+                "method": "input",
+                "title": "Runtime input",
+                "prefill": "base",
+            },
+        },
+    )
+    request_input = page.locator("#request-layer [data-request-value]")
+    request_input.fill("operator typing")
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "notice",
+                "level": "info",
+                "source": "proof",
+                "message": "background frame",
+            },
+        },
+    )
+    assert request_input.input_value() == "operator typing", (
+        f"{name} request input reset after unrelated frame"
+    )
+    assert request_input.evaluate("element => document.activeElement === element"), (
+        f"{name} request input lost focus after unrelated frame"
+    )
+
+    dispatch_frame(
+        page,
+        {
+            "type": "bootstrap",
+            "cwd": "C:\\generic",
+            "kind": "work",
+            "parityRequired": False,
+        },
+    )
+    dispatch_frame(page, {"type": "parity", "ok": True})
+    page.get_by_text("Custom access", exact=True).wait_for()
+    dispatch_frame(
+        page,
+        {
+            "type": "bootstrap",
+            "cwd": "C:\\worktrees\\blocked-loop",
+            "kind": "loop",
+            "parityRequired": True,
+        },
+    )
+    dispatch_frame(
+        page,
+        {"type": "parity", "ok": False, "detail": "proof failure"},
+    )
+    page.get_by_text("Access blocked", exact=True).wait_for()
     return screenshot
+
+
+def verify_stream_performance(browser) -> float:
+    page = browser.new_page(viewport={"width": 1000, "height": 800})
+    page.goto(f"{HARNESS.as_uri()}?empty=1")
+    page.wait_for_load_state("networkidle")
+    messages = [
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"History {index}: **cached markdown** and stable DOM.",
+                }
+            ],
+        }
+        for index in range(1000)
+    ]
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "response",
+                "command": "get_messages",
+                "success": True,
+                "data": {"messages": messages},
+            },
+        },
+    )
+    assert page.locator("[data-message-key]").count() == 1000
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "message_start",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "stream 0"}],
+                },
+            },
+        },
+    )
+    durations = []
+    for index in range(12):
+        duration = page.evaluate(
+            """(index) => new Promise((resolve) => {
+              const started = performance.now();
+              window.dispatchEvent(new CustomEvent("omp-fixture-frame", {
+                detail: {
+                  type: "rpc",
+                  frame: {
+                    type: "message_update",
+                    message: {
+                      role: "assistant",
+                      content: [{ type: "text", text: `stream ${index}` }]
+                    }
+                  }
+                }
+              }));
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                resolve(performance.now() - started);
+              }));
+            })""",
+            index,
+        )
+        durations.append(float(duration))
+    average = sum(durations) / len(durations)
+    assert average < 80, f"long-history stream update averaged {average:.1f} ms"
+    page.close()
+    return average
 
 
 def main() -> None:
@@ -77,10 +279,12 @@ def main() -> None:
             "reference-empty",
             empty=True,
         )
+        stream_average = verify_stream_performance(browser)
         browser.close()
     print(f"desktop={desktop}")
     print(f"narrow={narrow}")
     print(f"reference={reference}")
+    print(f"stream_update_average_ms={stream_average:.1f}")
 
 
 if __name__ == "__main__":

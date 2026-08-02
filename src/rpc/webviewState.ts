@@ -77,6 +77,7 @@ export type UiRuntimeState = {
   tools: string[];
   transport: "starting" | "ready" | "exited" | "failed";
   parity: "pending" | "passed" | "failed" | "not-required";
+  parityRequired?: boolean;
   parityDetail?: string;
   cwd?: string;
   branch?: string;
@@ -294,6 +295,7 @@ export function applyHostFrame(
       next.runtime.branch = stringValue(raw.branch);
       next.runtime.kind = stringValue(raw.kind);
       next.runtime.advisorLabel = stringValue(raw.advisorLabel);
+      next.runtime.parityRequired = raw.parityRequired !== false;
       next.runtime.parity =
         raw.parityRequired === false ? "not-required" : "pending";
       return next;
