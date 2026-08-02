@@ -30,6 +30,9 @@ test("RPC webview bridge accepts bounded user actions", () => {
     }),
     { type: "openFile", path: "src/app.ts", line: 12, col: undefined },
   );
+  for (const type of ["showSessions", "openSettings", "newSession"] as const) {
+    assert.deepEqual(parseRpcWebviewMessage({ type }), { type });
+  }
 });
 
 test("RPC webview bridge rejects empty, oversized, and malformed input", () => {

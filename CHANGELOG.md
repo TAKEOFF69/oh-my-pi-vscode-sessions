@@ -5,6 +5,25 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-02
+
+### Changed
+
+- Structured RPC tabs now use Codex-like quiet chrome: flat canvas, compact session header,
+  text-first conversation, expandable tool rows, bottom-docked rounded composer, and local
+  worktree footer.
+- Composer shows real OMP access mode, model, effort, queue state, and send/stop state without a
+  persistent technical status rail.
+- Header opens native OMP Sessions, extension settings, and duplicate-gated New Session. Plus menu
+  keeps find, logs, and diagnostic terminal available without crowding normal work.
+
+### Fixed
+
+- Webview root now owns full viewport height, preventing populated narrow sessions from clipping
+  composer controls below editor viewport.
+- Browser proof now covers populated desktop, populated `430x800`, and empty screenshot-like
+  `457x1000` layouts, including composer bottom bounds.
+
 ## [2.1.3] - 2026-07-30
 
 ### Security
