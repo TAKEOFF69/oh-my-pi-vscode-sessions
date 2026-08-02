@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 from tempfile import gettempdir
 
@@ -411,10 +412,68 @@ def verify_shared_surface_lifecycle(browser) -> None:
     page.close()
 
 
+def verify_untrusted_markdown(browser) -> None:
+    page = browser.new_page(viewport={"width": 800, "height": 600})
+    page.goto(f"{HARNESS.as_uri()}?empty=1")
+    page.wait_for_load_state("networkidle")
+    page.evaluate("() => { window.__OMP_XSS_SENTINEL__ = 0; }")
+    payload = (
+        '<img src=x onerror="window.__OMP_XSS_SENTINEL__ = 1"> '
+        '<script>window.__OMP_XSS_SENTINEL__ = 2</script> '
+        '[unsafe](javascript:window.__OMP_XSS_SENTINEL__=3)'
+    )
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "message_start",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": payload}],
+                },
+            },
+        },
+    )
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": payload}],
+                },
+            },
+        },
+    )
+    message = page.locator(".message.assistant").last
+    message.wait_for()
+    assert page.evaluate("() => window.__OMP_XSS_SENTINEL__") == 0
+    assert message.locator("script").count() == 0
+    assert message.locator("img[onerror]").count() == 0
+    assert message.locator('a[href^="javascript:"]').count() == 0
+    assert "<script>" in message.inner_text()
+    page.close()
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--security-only",
+        action="store_true",
+        help="Run only untrusted Markdown/XSS regression",
+    )
+    args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
+        if args.security_only:
+            verify_untrusted_markdown(browser)
+            browser.close()
+            print("untrusted_markdown=PASS")
+            return
         desktop = verify_view(
             browser.new_page(viewport={"width": 1440, "height": 900}),
             "desktop",
@@ -428,6 +487,7 @@ def main() -> None:
             "reference-empty",
             empty=True,
         )
+        verify_untrusted_markdown(browser)
         stream_average = verify_stream_performance(browser)
         sidebar_narrow, sidebar_narrow_ms = verify_sidebar(
             browser, 340, 980, "reference"

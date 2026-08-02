@@ -571,7 +571,9 @@ function updateMessageSlot(messages: UiMessage[]): void {
     renderedMessages.set(message.key, message);
   }
   for (const message of messages.slice(currentKeys.length)) {
-    slot.insertAdjacentHTML("beforeend", renderMessage(message));
+    // renderMessage escapes every interpolation and MarkdownIt has html=false.
+    // scripts/verify-webview.py exercises raw HTML, event handlers, and javascript: links.
+    slot.insertAdjacentHTML("beforeend", renderMessage(message)); // nosemgrep: typescript.react.security.audit.react-unsanitized-method.react-unsanitized-method
     renderedMessages.set(message.key, message);
   }
 }

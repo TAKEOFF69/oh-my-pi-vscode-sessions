@@ -1,0 +1,71 @@
+name: Bug report
+description: Report reproducible extension behavior
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove credentials, private source, prompts, and personal paths. Report vulnerabilities through SECURITY.md instead.
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      placeholder: 2.2.2
+    validations:
+      required: true
+  - type: input
+    id: omp-version
+    attributes:
+      label: OMP version
+      placeholder: omp/17.1.3
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: VS Code and operating system
+      placeholder: VS Code 1.xx, Windows 11 x64
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Structured RPC session
+        - Session/worktree management
+        - Editor context
+        - Diagnostic TUI
+        - Project policy
+        - Packaging or installation
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include exact steps using a public or synthetic repository when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and redacted logs
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, private source, prompts, and unnecessary absolute paths.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
