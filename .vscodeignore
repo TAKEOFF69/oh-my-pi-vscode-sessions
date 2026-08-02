@@ -1,4 +1,5 @@
 .vscode/**
+.github/**
 node_modules/**
 !node_modules/@lydell/**
 !node_modules/@xterm/**
@@ -9,3 +10,9 @@ tsconfig*.json
 .gitignore
 **/*.map
 test/**
+docs/**
+CONTRIBUTING.md
+PRIVACY.md
+requirements-dev.txt
+SECURITY.md
+SUPPORT.md

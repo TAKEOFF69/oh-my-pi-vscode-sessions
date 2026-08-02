@@ -1,5 +1,9 @@
 # Oh My Pi Sessions
 
+[![CI](https://github.com/TAKEOFF69/oh-my-pi-vscode-sessions/actions/workflows/ci.yml/badge.svg)](https://github.com/TAKEOFF69/oh-my-pi-vscode-sessions/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/TAKEOFF69/oh-my-pi-vscode-sessions/actions/workflows/codeql.yml/badge.svg)](https://github.com/TAKEOFF69/oh-my-pi-vscode-sessions/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Run multiple independent [Oh My Pi](https://github.com/can1357/oh-my-pi)
 sessions in one VS Code window. Each OMP process opens as a native editor tab and
 has its own working directory, structured RPC state, and lifecycle.
@@ -16,6 +20,25 @@ The UX direction also draws from
 [OMP Desktop](https://github.com/MTEnt/omp-desktop) and
 [Zetaphor's Pi VS Code extension](https://github.com/Zetaphor/pi-vscode-extension):
 the interface orchestrates sessions while OMP remains the agent runtime.
+
+## Requirements and compatibility
+
+- VS Code 1.85 or newer;
+- OMP 17.1.3 or newer with RPC protocol v2;
+- Windows, macOS, or Linux on x64 or arm64.
+
+See [SUPPORT.md](SUPPORT.md) for compatibility and reporting guidance.
+
+## Generic core and project policies
+
+Generic OMP sessions do not require Dzialkopedia or another private repository. Generic core owns
+RPC transport, native editor tabs, session lifecycle, process reaping, writer leases, and editor
+context. Unverified generic sessions are labelled `Custom access`.
+
+Version 2.2.2 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
+Git origin and is fail-closed. Adapter source exposes repository identity, control-file names, and
+protocol identifiers, but contains no credentials. This is currently runtime separation, not yet
+separate packaging; see [project-policy boundary](docs/project-policy-boundary.md).
 
 ## Workflow
 
@@ -162,15 +185,15 @@ Dzialkopedia always creates and bootstraps fresh `*-omp-session-*` worktree from
 Loop handoff creates fresh `*-omp-loop-session-*` worktree. Existing worktrees are
 opened only through advanced chooser when explicit branch selection is intended.
 
-## Build and install
+## Development build and install
 
 ```bash
-npm install
+npm ci
 npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.2.1.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-*.vsix --force
 ```
 
 ## Current boundary
@@ -189,3 +212,10 @@ fabricated; use the explicit diagnostic TUI when investigating one.
 ## License
 
 MIT. Original extension copyright and license remain in [LICENSE](LICENSE).
+
+## Community and security
+
+- Contributions: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Support and compatibility: [SUPPORT.md](SUPPORT.md)
+- Privacy: [PRIVACY.md](PRIVACY.md)
+- Private vulnerability reporting: [SECURITY.md](SECURITY.md)

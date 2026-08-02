@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref; let branch protection rely on the last one.
 concurrency:
@@ -17,6 +18,7 @@ jobs:
   check:
     name: Typecheck · Test · Build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -34,10 +36,55 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: RPC parity selftest
+        run: npm run parity:selftest
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Build (esbuild production bundle)
         run: npm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install browser security test
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Untrusted Markdown security regression
+        run: python scripts/verify-webview.py --security-only
 
       # Cheap insurance: fail fast if .vscodeignore/manifest would ship the
       # wrong files, without paying for a full 6-target package:all.
       - name: Validate packaging config
-        run: npx vsce ls >/dev/null
+        run: |
+          files="$(npx vsce ls)"
+          if printf '%s\n' "$files" | grep -E '^(\.github/|src/|test/|scripts/|docs/|CONTRIBUTING\.md$|PRIVACY\.md$|requirements-dev\.txt$|SECURITY\.md$|SUPPORT\.md$)'; then
+            echo "Development or community-only files leaked into VSIX"
+            exit 1
+          fi
+
+  platform-package:
+    name: Runtime/package smoke · ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+          - runner: windows-latest
+          - runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx vsce package --out oh-my-pi-vscode-${{ runner.os }}.vsix

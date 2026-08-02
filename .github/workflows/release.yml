@@ -45,6 +45,17 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: RPC parity selftest
+        run: npm run parity:selftest
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify tag matches extension version
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          test "${GITHUB_REF_NAME#v}" = "$(node -p 'require("./package.json").version')"
+
       # Builds one VSIX per target on a single runner. package-all.mjs swaps the
       # native node-pty binary per target via `npm install --force`, so no OS
       # matrix is needed.
