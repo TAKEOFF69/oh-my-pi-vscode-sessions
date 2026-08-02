@@ -181,7 +181,7 @@ test("canonical validation binds every executable adapter byte to GitHub main", 
 
     assert.equal(await validateCanonicalDzialkiAdapter(root, loader), true);
     await writeFile(
-      nodePath.join(root, "scripts", "omp", "windows-job-runner.ps1"),
+      nodePath.join(root, "docs", "loop", "bin", "redact-log.py"),
       "modified\n",
       "utf8",
     );
@@ -208,6 +208,28 @@ test("canonical snapshot must cover full pinned adapter inventory", async () => 
         ".claude/skills/loop-creator/scripts/loopctl.py",
       ),
     );
+    assert.ok(
+      CANONICAL_ADAPTER_PATHS.includes(
+        ".claude/skills/loop-creator/scripts/loop_preflight.mjs",
+      ),
+    );
+    assert.ok(
+      CANONICAL_ADAPTER_PATHS.includes(
+        ".claude/skills/loop-creator/references/preflight-config.md",
+      ),
+    );
+    assert.ok(CANONICAL_ADAPTER_PATHS.includes("package.json"));
+    assert.ok(CANONICAL_ADAPTER_PATHS.includes("package-lock.json"));
+    assert.ok(CANONICAL_ADAPTER_PATHS.includes(".githooks/commit-msg"));
+    assert.ok(CANONICAL_ADAPTER_PATHS.includes(".githooks/pre-commit"));
+    assert.ok(CANONICAL_ADAPTER_PATHS.includes(".githooks/pre-push"));
+    assert.ok(
+      CANONICAL_ADAPTER_PATHS.includes("scripts/agent/cleanup-worktree.mjs"),
+    );
+    assert.ok(
+      CANONICAL_ADAPTER_PATHS.includes("scripts/agent/start-worktree.mjs"),
+    );
+    assert.ok(CANONICAL_ADAPTER_PATHS.includes("docs/loop/bin/redact-log.py"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

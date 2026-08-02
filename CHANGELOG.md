@@ -5,6 +5,16 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-08-02
+
+### Changed
+
+- Canonical Dzialkopedia adapter inventory now pins Loop creator mechanical-preflight executable,
+  config contract, canonical worktree launch/cleanup scripts, npm script/lock bytes, and Git hook
+  entrypoints plus their executable gate closure, including worker output redaction. New sessions
+  fail closed unless extension and repository agree on complete status-only OMP harness-preflight
+  integration and final-consumer bytes.
+
 ## [2.2.1] - 2026-08-02
 
 ### Fixed
