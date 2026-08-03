@@ -9,6 +9,30 @@ export type SidebarWebviewMessage =
 
 export type SidebarFocusIntent = { sequence: number; clear: boolean };
 
+export type SidebarSessionPayload = {
+  id: string;
+  label: string;
+  kind: string;
+  status: string;
+  active: boolean;
+  live: boolean;
+  updatedAt: number;
+};
+
+export function toSidebarSessionPayload(
+  session: SidebarSessionPayload,
+): SidebarSessionPayload {
+  return {
+    id: session.id,
+    label: session.label,
+    kind: session.kind,
+    status: session.status,
+    active: session.active,
+    live: session.live,
+    updatedAt: session.updatedAt,
+  };
+}
+
 export class SidebarFocusQueue {
   #sequence = 0;
   #pending: SidebarFocusIntent | undefined;

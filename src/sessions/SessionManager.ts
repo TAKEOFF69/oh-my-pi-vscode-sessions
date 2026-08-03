@@ -821,8 +821,6 @@ export class SessionManager implements vscode.Disposable {
       ...this.#sessions.map((session) => ({
         id: session.id,
         label: session.label,
-        cwd: session.cwd,
-        ...(session.branch ? { branch: session.branch } : {}),
         kind: session.kind,
         status: session.status,
         active: session.active,
@@ -835,8 +833,6 @@ export class SessionManager implements vscode.Disposable {
         .map((record) => ({
           id: record.id,
           label: record.label,
-          cwd: record.cwd,
-          ...(record.branch ? { branch: record.branch } : {}),
           kind: record.kind,
           status: "closed" as const,
           active: false,

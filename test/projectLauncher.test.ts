@@ -56,14 +56,14 @@ test("trusted selected worktree launcher outranks lobby workspace settings", asy
 });
 
 test("project launcher resolves Node from PATH when extension host is Code.exe", () => {
-  const code = nodePath.resolve(
+  const code = nodePath.win32.resolve(
     "C:/Users/test/AppData/Local/Programs/Microsoft VS Code/Code.exe",
   );
-  const node = nodePath.resolve("C:/Program Files/nodejs/node.exe");
+  const node = nodePath.win32.resolve("C:/Program Files/nodejs/node.exe");
   assert.equal(
     resolveNodeExecutable({
       execPath: code,
-      pathValue: nodePath.dirname(node),
+      pathValue: nodePath.win32.dirname(node),
       pathExists: (candidate) => candidate === node,
       platform: "win32",
     }),
@@ -75,7 +75,7 @@ test("project launcher fails closed when real Node cannot be found", () => {
   assert.throws(
     () =>
       resolveNodeExecutable({
-        execPath: nodePath.resolve("C:/Program Files/Editor/Code.exe"),
+        execPath: nodePath.win32.resolve("C:/Program Files/Editor/Code.exe"),
         pathValue: "",
         pathExists: () => false,
         platform: "win32",

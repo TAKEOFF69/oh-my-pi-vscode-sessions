@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   parseSidebarWebviewMessage,
   SidebarFocusQueue,
+  toSidebarSessionPayload,
 } from "../src/sidebar/messages";
 
 test("sidebar bridge accepts one bounded first prompt and session focus", () => {
@@ -17,6 +18,32 @@ test("sidebar bridge accepts one bounded first prompt and session focus", () => 
   );
   assert.deepEqual(parseSidebarWebviewMessage({ type: "ready" }), {
     type: "ready",
+  });
+});
+
+test("sidebar payload strips worktree and arbitrary host-only metadata", () => {
+  const payload = toSidebarSessionPayload({
+    id: "session-1",
+    label: "Fix OMP session resume",
+    kind: "work",
+    status: "idle",
+    active: true,
+    live: true,
+    updatedAt: 42,
+    cwd: "C:\\private\\worktree",
+    branch: "wip/private",
+  } as Parameters<typeof toSidebarSessionPayload>[0] & {
+    cwd: string;
+    branch: string;
+  });
+  assert.deepEqual(payload, {
+    id: "session-1",
+    label: "Fix OMP session resume",
+    kind: "work",
+    status: "idle",
+    active: true,
+    live: true,
+    updatedAt: 42,
   });
 });
 

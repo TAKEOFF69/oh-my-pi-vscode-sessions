@@ -1,7 +1,11 @@
 import * as vscode from "vscode";
 
 import type { SessionKind, SessionStatus } from "../sessions/SessionPanel";
-import { parseSidebarWebviewMessage, SidebarFocusQueue } from "./messages";
+import {
+  parseSidebarWebviewMessage,
+  SidebarFocusQueue,
+  toSidebarSessionPayload,
+} from "./messages";
 import { buildSidebarHtml } from "./sidebarHtml";
 
 export type SidebarSession = {
@@ -32,6 +36,7 @@ export class SessionSidebarProvider
   readonly #extensionUri: vscode.Uri;
   readonly #callbacks: SidebarCallbacks;
   #view: vscode.WebviewView | undefined;
+  #ready = false;
   #sessions: readonly SidebarSession[] = [];
   #creating = false;
   readonly #focusQueue = new SidebarFocusQueue();
@@ -49,6 +54,7 @@ export class SessionSidebarProvider
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.#view = view;
+    this.#ready = false;
     view.webview.options = {
       enableScripts: true,
       localResourceRoots: [
@@ -62,6 +68,7 @@ export class SessionSidebarProvider
       }),
       view.onDidDispose(() => {
         this.#view = undefined;
+        this.#ready = false;
       }),
     );
   }
@@ -77,9 +84,9 @@ export class SessionSidebarProvider
   }
 
   focusComposer(clear = false): void {
-    const intent = this.#focusQueue.begin(clear, Boolean(this.#view));
+    const intent = this.#focusQueue.begin(clear, this.#ready);
     void vscode.commands.executeCommand("ohMyPiSessions.sessions.focus");
-    if (this.#view) {
+    if (this.#view && this.#ready) {
       void this.#post({ type: "focusComposer", clear }).then((delivered) => {
         if (!delivered) this.#focusQueue.deliveryFailed(intent);
       });
@@ -90,6 +97,7 @@ export class SessionSidebarProvider
     for (const disposable of this.#disposables) disposable.dispose();
     this.#disposables = [];
     this.#view = undefined;
+    this.#ready = false;
   }
 
   async #handleMessage(raw: unknown): Promise<void> {
@@ -97,6 +105,7 @@ export class SessionSidebarProvider
     if (!message) return;
     switch (message.type) {
       case "ready":
+        this.#ready = true;
         await this.#postState();
         {
           const pending = this.#focusQueue.consumePending();
@@ -154,7 +163,7 @@ export class SessionSidebarProvider
       type: "state",
       creating: this.#creating,
       profile: this.#profile,
-      sessions: this.#sessions,
+      sessions: this.#sessions.map(toSidebarSessionPayload),
     });
   }
 
