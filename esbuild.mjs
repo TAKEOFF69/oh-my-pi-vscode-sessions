@@ -28,15 +28,32 @@ const webviewOptions = {
   logLevel: "info",
 };
 
+const sidebarWebviewOptions = {
+  entryPoints: ["src/sidebar/webview.ts"],
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  outfile: "dist/sidebar-webview.js",
+  sourcemap: prod ? false : "inline",
+  minify: prod,
+  logLevel: "info",
+};
+
 if (watch) {
   const extensionContext = await esbuild.context(extensionOptions);
   const webviewContext = await esbuild.context(webviewOptions);
-  await Promise.all([extensionContext.watch(), webviewContext.watch()]);
+  const sidebarWebviewContext = await esbuild.context(sidebarWebviewOptions);
+  await Promise.all([
+    extensionContext.watch(),
+    webviewContext.watch(),
+    sidebarWebviewContext.watch(),
+  ]);
   console.log("[esbuild] watching...");
 } else {
   await Promise.all([
     esbuild.build(extensionOptions),
     esbuild.build(webviewOptions),
+    esbuild.build(sidebarWebviewOptions),
   ]);
   console.log("[esbuild] build complete");
 }

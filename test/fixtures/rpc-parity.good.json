@@ -4,7 +4,7 @@
       "provider": "anthropic",
       "id": "claude-opus-5"
     },
-    "thinkingLevel": "max",
+    "thinkingLevel": "xhigh",
     "cwd": "C:\\work\\dzialki-loop",
     "dumpTools": [
       { "name": "read" },
@@ -22,7 +22,7 @@
     "name": "loop",
     "provider": "anthropic",
     "modelId": "claude-opus-5",
-    "thinkingLevel": "max",
+    "thinkingLevel": "xhigh",
     "cwd": "C:\\work\\dzialki-loop",
     "requiredTools": [
       "read",

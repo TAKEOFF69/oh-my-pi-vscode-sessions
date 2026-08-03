@@ -70,7 +70,7 @@ files, or decides tool authorization.
 Project launch profiles may attach a parity contract. Dzialkopedia requires:
 
 - active model `anthropic/claude-opus-5`;
-- thinking level `max`;
+- thinking level `xhigh`;
 - process spawn cwd equal to the selected worktree;
 - exact active-tool inventory with no undeclared extras;
 - `dzialki_policy_status` present in every profile, proving the repository policy

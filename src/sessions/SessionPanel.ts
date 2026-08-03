@@ -5,6 +5,10 @@ import type { RpcParityProfile } from "../rpc/parity";
 import { RpcSessionHost } from "../rpc/RpcSessionHost";
 import { TerminalSessionHost } from "../terminal/TerminalSessionHost";
 import type { SessionHost } from "./SessionHost";
+import {
+  normalizeRuntimeSessionTitle,
+  type SessionTitleSource,
+} from "../sessionTitle";
 
 export type SessionKind = "work" | "readonly" | "loop";
 export type SessionTransport = "rpc" | "terminal";
@@ -26,6 +30,9 @@ export type SessionSpec = {
   executable: string;
   args: readonly string[];
   initialPrompt?: string;
+  resumeSessionFile?: string;
+  titleSource?: SessionTitleSource;
+  updatedAt?: number;
   parity?: RpcParityProfile;
 };
 
@@ -44,6 +51,9 @@ export class SessionPanel implements vscode.Disposable {
   #disposePromise: Promise<void> | undefined;
   #status: SessionStatus = "starting";
   #spec: SessionSpec;
+  #sessionFile: string | undefined;
+  #titleSource: SessionTitleSource;
+  #updatedAt: number;
   #disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -63,6 +73,9 @@ export class SessionPanel implements vscode.Disposable {
     this.#onActivated = onActivated;
     this.#onChanged = onChanged;
     this.#logger = logger;
+    this.#sessionFile = spec.resumeSessionFile;
+    this.#titleSource = spec.titleSource ?? "runtime";
+    this.#updatedAt = spec.updatedAt ?? Date.now();
     this.panel = vscode.window.createWebviewPanel(
       SessionPanel.viewType,
       this.#title(),
@@ -93,13 +106,30 @@ export class SessionPanel implements vscode.Disposable {
             executable: spec.executable,
             args: spec.args,
             initialPrompt: spec.initialPrompt,
+            resumeSessionFile: spec.resumeSessionFile,
             parity: spec.parity,
             logger,
             label: spec.label,
             onStatusChange: statusChanged,
-            onTitleChange: (title) => {
-              this.#spec = { ...this.#spec, label: title };
+            onTitleChange: (title, source) => {
+              const accepted = normalizeRuntimeSessionTitle(
+                title,
+                this.#spec.branch,
+                this.#spec.cwd,
+              );
+              if (!accepted || this.#titleSource === "manual") return false;
+              if (source === "transient" && this.#titleSource === "runtime") {
+                return false;
+              }
+              this.#spec = { ...this.#spec, label: accepted };
+              this.#titleSource = "runtime";
+              this.#updatedAt = Date.now();
               this.panel.title = this.#title();
+              this.#onChanged(this);
+              return true;
+            },
+            onSessionFileChange: (sessionFile) => {
+              this.#sessionFile = sessionFile;
               this.#onChanged(this);
             },
             onLoopHandoff: (alias) => onLoopHandoff(alias, this),
@@ -174,6 +204,18 @@ export class SessionPanel implements vscode.Disposable {
     return this.#status;
   }
 
+  get sessionFile(): string | undefined {
+    return this.#sessionFile;
+  }
+
+  get titleSource(): SessionTitleSource {
+    return this.#titleSource;
+  }
+
+  get updatedAt(): number {
+    return this.#updatedAt;
+  }
+
   reveal(): void {
     this.panel.reveal(this.panel.viewColumn, false);
     this.#host.focus();
@@ -197,8 +239,11 @@ export class SessionPanel implements vscode.Disposable {
       return;
     }
     this.#spec = { ...this.#spec, label: trimmed };
+    this.#titleSource = "manual";
+    this.#updatedAt = Date.now();
     this.#host.setLabel(trimmed);
     this.panel.title = this.#title();
+    this.#onChanged(this);
   }
 
   dispose(): void {

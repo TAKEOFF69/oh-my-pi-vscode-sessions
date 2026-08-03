@@ -146,7 +146,7 @@ function buildDzialkiParity(
     name: `dzialki-${kind}`,
     provider: "anthropic",
     modelId: "claude-opus-5",
-    thinkingLevel: "max",
+    thinkingLevel: "xhigh",
     cwd,
     requiredTools,
     allowedTools,

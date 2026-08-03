@@ -414,9 +414,11 @@ function renderRail(): void {
   sessionPath.title = state.runtime.cwd ?? "";
 
   const model = state.runtime.model?.id || "Model pending";
-  requireElement("model-label").textContent = state.runtime.thinkingLevel
-    ? `${model} · ${state.runtime.thinkingLevel}`
-    : model;
+  const modelDisplay = formatModelLabel(model);
+  const effortDisplay = formatThinkingLevel(state.runtime.thinkingLevel);
+  requireElement("model-label").textContent = effortDisplay
+    ? `${modelDisplay} · ${effortDisplay}`
+    : modelDisplay;
   requireElement("access-label").textContent = accessLabel();
 
   const context = state.runtime.contextUsage;
@@ -437,7 +439,7 @@ function renderRail(): void {
   const runtimeSummary = [
     `RPC ${state.runtime.transport}`,
     `parity ${state.runtime.parity}`,
-    `${model}${state.runtime.thinkingLevel ? ` · ${state.runtime.thinkingLevel}` : ""}`,
+    `${modelDisplay}${effortDisplay ? ` · ${effortDisplay}` : ""}`,
     `advisor ${state.runtime.advisorLabel || "project policy"}`,
     `context ${contextPercent}`,
     `${state.runtime.queuedMessageCount} queued`,
@@ -1063,6 +1065,28 @@ function extractFilePath(value: unknown): string | undefined {
 function normalizePercent(value: number): number {
   const percent = value <= 1 ? value * 100 : value;
   return Math.max(0, Math.min(100, Math.round(percent)));
+}
+
+function formatModelLabel(value: string): string {
+  switch (value.toLowerCase()) {
+    case "claude-opus-5":
+      return "Opus 5";
+    case "gpt-5.6-sol":
+      return "GPT-5.6 Sol";
+    case "gpt-5.6-luna":
+      return "GPT-5.6 Luna";
+    default:
+      return value;
+  }
+}
+
+function formatThinkingLevel(value: string | undefined): string {
+  if (!value) return "";
+  return value.toLowerCase() === "xhigh" ? "Extra High" : capitalize(value);
+}
+
+function capitalize(value: string): string {
+  return value ? `${value[0]?.toUpperCase()}${value.slice(1)}` : value;
 }
 
 function requireElement(id: string): HTMLElement {

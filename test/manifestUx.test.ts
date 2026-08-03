@@ -13,23 +13,15 @@ const sessionManagerSource = readFileSync(
 );
 
 test("sidebar exposes one primary New Session path", () => {
-  const welcome = manifest.contributes.viewsWelcome.find(
-    (entry: { view?: string }) =>
-      entry.view === "ohMyPiSessions.sessions",
+  const view = manifest.contributes.views["oh-my-pi-sessions"].find(
+    (entry: { id?: string }) => entry.id === "ohMyPiSessions.sessions",
   );
-  assert.match(welcome.contents, /\[New session\]/);
-  assert.doesNotMatch(
-    welcome.contents,
-    /newLoopSession|newReadOnlySession|newTerminalSession/,
-  );
-
-  const titleCommands = manifest.contributes.menus["view/title"].map(
-    (entry: { command: string }) => entry.command,
-  );
-  assert.deepEqual(titleCommands, [
-    "ohMyPiSessions.newSession",
-    "ohMyPiSessions.closeAll",
-  ]);
+  assert.equal(view.type, "webview");
+  assert.equal(view.name, "Chats");
+  assert.equal(manifest.contributes.viewsWelcome, undefined);
+  assert.equal(manifest.contributes.menus["view/title"], undefined);
+  assert.match(extensionSource, /registerWebviewViewProvider/);
+  assert.doesNotMatch(extensionSource, /registerTreeDataProvider/);
   assert.match(
     extensionSource,
     /registerCommand\("ohMyPiSessions\.newSession",[\s\S]{0,120}manager\.newPrimarySession\(\)/,
@@ -41,6 +33,10 @@ test("sidebar exposes one primary New Session path", () => {
   assert.doesNotMatch(
     sessionManagerSource,
     /return this\.newSession\(\)/,
+  );
+  assert.match(
+    sessionManagerSource,
+    /if \(!prompt\)[\s\S]{0,100}this\.focusNewSession\(\)/,
   );
 });
 

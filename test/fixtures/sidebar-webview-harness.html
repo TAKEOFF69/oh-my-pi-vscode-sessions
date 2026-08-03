@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OMP sidebar verification</title>
+    <style>
+      :root {
+        --vscode-sideBar-background: #181818;
+        --vscode-sideBarSectionHeader-border: #2b2b2b;
+        --vscode-foreground: #d7d7d7;
+        --vscode-descriptionForeground: #8c8c8c;
+        --vscode-font-family: Inter, "Segoe UI", sans-serif;
+        --vscode-toolbar-hoverBackground: #2d2d2d;
+        --vscode-list-hoverBackground: #2a2a2a;
+        --vscode-input-background: #1b1b1b;
+        --vscode-input-foreground: #e5e5e5;
+        --vscode-input-border: #454545;
+        --vscode-input-placeholderForeground: #777;
+        --vscode-button-background: #8d8d8d;
+        --vscode-button-foreground: #191919;
+        --vscode-button-hoverBackground: #a2a2a2;
+        --vscode-testing-iconPassed: #73c991;
+        --vscode-testing-iconQueued: #cca700;
+        --vscode-testing-iconFailed: #f14c4c;
+        --vscode-editorWarning-foreground: #cca700;
+        --vscode-errorForeground: #f48771;
+      }
+    </style>
+    <link rel="stylesheet" href="../../dist/sidebar-webview.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      const now = Date.now();
+      window.__OMP_SIDEBAR_FIXTURE__ = [{
+        type: "state",
+        creating: false,
+        sessions: [
+          {
+            id: "rcn",
+            label: "Resume RCN classifier validation",
+            cwd: "C:\\worktrees\\dzialki-rcn",
+            branch: "wip/20260803-omp-session-internal-rcn",
+            kind: "work",
+            status: "idle",
+            active: true,
+            live: true,
+            updatedAt: now - 14 * 60 * 60 * 1000
+          },
+          {
+            id: "corpus",
+            label: "Continue valuation corpus enrichment",
+            cwd: "C:\\worktrees\\dzialki-corpus",
+            branch: "wip/20260802-omp-session-internal-corpus",
+            kind: "work",
+            status: "running",
+            active: false,
+            live: true,
+            updatedAt: now - 24 * 60 * 60 * 1000
+          },
+          {
+            id: "harness",
+            label: "Research Pi harness for loops",
+            cwd: "C:\\worktrees\\dzialki-harness",
+            branch: "wip/20260801-omp-session-internal-harness",
+            kind: "work",
+            status: "closed",
+            active: false,
+            live: false,
+            updatedAt: now - 3 * 24 * 60 * 60 * 1000
+          }
+        ]
+      }];
+    </script>
+    <script src="../../dist/sidebar-webview.js"></script>
+  </body>
+</html>

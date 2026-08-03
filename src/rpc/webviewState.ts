@@ -293,6 +293,8 @@ export function applyHostFrame(
     case "bootstrap":
       next.runtime.cwd = stringValue(raw.cwd);
       next.runtime.branch = stringValue(raw.branch);
+      next.runtime.sessionName =
+        stringValue(raw.sessionName) || next.runtime.sessionName;
       next.runtime.kind = stringValue(raw.kind);
       next.runtime.advisorLabel = stringValue(raw.advisorLabel);
       next.runtime.parityRequired = raw.parityRequired !== false;
@@ -361,7 +363,8 @@ function reduceResponse(
     state.runtime.isStreaming = data.isStreaming === true;
     state.runtime.isCompacting = data.isCompacting === true;
     state.runtime.queuedMessageCount = numberValue(data.queuedMessageCount);
-    state.runtime.sessionName = stringValue(data.sessionName);
+    state.runtime.sessionName =
+      stringValue(data.sessionName) || state.runtime.sessionName;
     state.runtime.sessionId = stringValue(data.sessionId);
     state.runtime.sessionFile = stringValue(data.sessionFile);
     state.runtime.contextUsage = isRecord(data.contextUsage)

@@ -13,6 +13,7 @@ test("webview reducer hydrates state and exact runtime surface", () => {
     type: "bootstrap",
     cwd: "C:\\work\\arc",
     branch: "wip/arc",
+    sessionName: "Inspect RCN classifier",
     kind: "work",
     advisorLabel: "Sol · xhigh",
   });
@@ -22,7 +23,7 @@ test("webview reducer hydrates state and exact runtime surface", () => {
     success: true,
     data: {
       model: { provider: "anthropic", id: "claude-opus-5" },
-      thinkingLevel: "max",
+      thinkingLevel: "xhigh",
       queuedMessageCount: 2,
       contextUsage: { tokens: 1000, contextWindow: 200000, percent: 0.5 },
       dumpTools: [{ name: "read" }, { name: "edit" }],
@@ -31,8 +32,9 @@ test("webview reducer hydrates state and exact runtime surface", () => {
   });
 
   assert.equal(state.runtime.model?.id, "claude-opus-5");
-  assert.equal(state.runtime.thinkingLevel, "max");
+  assert.equal(state.runtime.thinkingLevel, "xhigh");
   assert.equal(state.runtime.cwd, "C:\\work\\arc");
+  assert.equal(state.runtime.sessionName, "Inspect RCN classifier");
   assert.equal(state.runtime.parityRequired, true);
   assert.deepEqual(state.runtime.tools, ["read", "edit"]);
 });
