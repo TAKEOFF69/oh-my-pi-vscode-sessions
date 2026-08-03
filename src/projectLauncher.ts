@@ -31,8 +31,11 @@ type ProjectLauncherDetectionOptions = {
 };
 
 const execFileAsync = promisify(execFile);
-const CANONICAL_TREE_ENDPOINT =
-  "repos/TAKEOFF69/dzialki/git/trees/main?recursive=1";
+export const CANONICAL_DZIALKI_REPOSITORIES = [
+  "mateusz-stawczyk/dzialki",
+  "TAKEOFF69/dzialki",
+] as const;
+export const CANONICAL_DZIALKI_NODE_ID = "R_kgDORpREFA";
 export const CANONICAL_ADAPTER_PATHS = [
   ".claude/hooks/block-loop-questions.js",
   ".claude/hooks/evals/block-loop-questions.json",
@@ -188,7 +191,10 @@ export function canonicalDzialkiOrigin(origin: string | undefined): boolean {
     .replace(/\.git$/i, "")
     .replace(/\/+$/, "")
     .toLowerCase();
-  return normalized === "https://github.com/takeoff69/dzialki";
+  return (
+    normalized === "https://github.com/takeoff69/dzialki" ||
+    normalized === "https://github.com/mateusz-stawczyk/dzialki"
+  );
 }
 
 export async function validateCanonicalDzialkiAdapter(
@@ -291,19 +297,44 @@ function containedAdapterPath(
   return resolved;
 }
 
-async function fetchCanonicalGitHubSnapshot(): Promise<
-  CanonicalAdapterSnapshot
-> {
-  const payload = (await loadGitHubJson(CANONICAL_TREE_ENDPOINT)) as {
+export async function fetchCanonicalGitHubSnapshot(
+  loadJson: (endpoint: string) => Promise<unknown> = loadGitHubJson,
+): Promise<CanonicalAdapterSnapshot> {
+  let repository: string | undefined;
+  let payload: { truncated?: unknown; tree?: unknown } | undefined;
+  for (const candidate of CANONICAL_DZIALKI_REPOSITORIES) {
+    try {
+      const metadata = (await loadJson(`repos/${candidate}`)) as {
+        node_id?: unknown;
+      };
+      if (metadata.node_id !== CANONICAL_DZIALKI_NODE_ID) {
+        continue;
+      }
+      repository = candidate;
+      payload = (await loadJson(
+        `repos/${candidate}/git/trees/main?recursive=1`,
+      )) as {
+        truncated?: unknown;
+        tree?: unknown;
+      };
+      break;
+    } catch {
+      // The future alias is expected to be absent before the account rename.
+    }
+  }
+  if (!repository || !payload) {
+    throw new Error("Canonical Dzialkopedia repository identity is unavailable");
+  }
+  const treePayload = payload as {
     truncated?: unknown;
     tree?: unknown;
   };
-  if (payload.truncated !== false || !Array.isArray(payload.tree)) {
+  if (treePayload.truncated !== false || !Array.isArray(treePayload.tree)) {
     throw new Error("Canonical GitHub tree is missing or truncated");
   }
   const snapshot = new Map<string, string>();
   const wanted = new Set<string>(CANONICAL_ADAPTER_PATHS);
-  for (const entry of payload.tree) {
+  for (const entry of treePayload.tree) {
     if (
       typeof entry === "object" &&
       entry !== null &&
@@ -322,8 +353,8 @@ async function fetchCanonicalGitHubSnapshot(): Promise<
   if (!preflightSha) {
     throw new Error("Canonical GitHub tree has no OMP preflight blob");
   }
-  const blob = (await loadGitHubJson(
-    `repos/TAKEOFF69/dzialki/git/blobs/${preflightSha}`,
+  const blob = (await loadJson(
+    `repos/${repository}/git/blobs/${preflightSha}`,
   )) as {
     content?: unknown;
     encoding?: unknown;

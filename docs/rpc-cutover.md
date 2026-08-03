@@ -99,7 +99,8 @@ Any parity defect:
 
 Standing parity fixtures include a known-good state and seeded wrong-model, wrong-effort,
 wrong-cwd, missing-tool, forbidden-tool, and unexpected-tool states. Repository launchers are
-accepted only from the canonical `TAKEOFF69/dzialki` Git origin; a lookalike folder cannot execute
+accepted only from the current or approved post-rename alias for the same canonical Dzialkopedia
+repository (`TAKEOFF69/dzialki` or `mateusz-stawczyk/dzialki`); a lookalike folder cannot execute
 its own `scripts/omp/launch.mjs`. Before Node executes any local launcher code, the
 extension uses authenticated `gh api --hostname github.com` to load canonical GitHub
 `main` tree hashes. A pinned full adapter inventory covers launcher, preflight, policy,
@@ -107,7 +108,8 @@ Loop runtime, and project context files; normalized local Git-blob hashes must m
 entry. The extension fetches the immutable canonical preflight blob by its tree SHA,
 parses its duplicate-free `ADAPTER_PATHS`, and requires exact set equality with that
 pinned inventory. Authentication, network, truncated tree, declaration, inventory,
-containment, or hash mismatch fails closed.
+containment, or hash mismatch fails closed. Repository metadata must also match stable GitHub node
+ID `R_kgDORpREFA`, so a future holder of either username cannot satisfy canonical trust.
 
 ## Capability mapping
 
