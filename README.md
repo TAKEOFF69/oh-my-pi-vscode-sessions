@@ -20,8 +20,8 @@ the interface orchestrates sessions while OMP remains the agent runtime.
 ## Workflow
 
 1. Open **OMP Sessions** from the activity bar.
-2. Click **+ New Session**.
-3. Work in the new `π …` editor tab with conversation, advisor, tool, retry,
+2. Type into the bottom composer and send. The prompt creates one isolated session.
+3. Work in the new OMP editor tab with conversation, advisor, tool, retry,
    compaction, and subagent events rendered directly.
 4. If conversation calls for Loop v2, OMP requests an isolated controller tab
    automatically through `loop_handoff`.
@@ -34,10 +34,11 @@ One VS Code window can therefore contain:
 - several implementation sessions in separate worktrees;
 - ordinary source editors alongside all of them.
 
-Structured tabs use a quiet Codex-like surface: flat conversation canvas, compact session actions,
-text-first messages, expandable OMP evidence, and a bottom composer showing real project access,
-model/effort, and current worktree. Native editor tabs and the OMP Sessions activity view remain
-the multi-session directory; the UI does not duplicate or weaken worktree ownership.
+Sidebar and structured tabs use a quiet Codex-like surface. Sidebar shows smart conversation names
+instead of branch/worktree identifiers, bounded recent history, and one bottom composer. Session
+tabs keep text-first messages, expandable OMP evidence, and real project access/model/effort state.
+Native editor tabs remain the concurrent runtime surface; UI does not duplicate or weaken worktree
+ownership.
 
 For Dzialkopedia, standard session exposes narrow `loop_handoff` tool but never
 direct Loop lifecycle or dispatch tools. Once user and Opus decide Loop is right,
@@ -48,7 +49,7 @@ tool surface blocks before controller starts.
 The rule is **one writing session per worktree**, not one VS Code window per
 worktree. Atomic leases under shared Git directory enforce this across tabs,
 windows, and extension-host restarts; stale process owners are recovered. If
-**New Session** prepares a fresh isolated worktree from `origin/main` through
+Submitting first prompt prepares a fresh isolated worktree from `origin/main` through
 extension-owned Git operations, validates canonical Dzialkopedia adapter before
 launch, then bootstraps local dependencies and environment. Old session worktrees
 are never silently reused, so unfinished parallel work cannot bleed into new
@@ -88,7 +89,7 @@ Manual override:
 ```json
 {
   "ohMyPiSessions.executablePath": "C:\\path\\to\\omp.exe",
-  "ohMyPiSessions.defaultArguments": ["--advisor", "--thinking=max"]
+  "ohMyPiSessions.defaultArguments": ["--advisor", "--thinking=xhigh"]
 }
 ```
 
@@ -113,7 +114,7 @@ RPC protocol v2 and renders:
 - OMP extension confirmations, selections, and editor input;
 - model, effort, context, queue, worktree, and parity state.
 
-The Dzialkopedia launcher pins Opus 5/max as controller, keeps Sol 5.6/xhigh
+The Dzialkopedia launcher pins Opus 5/xhigh as controller, keeps Sol 5.6/xhigh
 advisor configuration, and exposes Loop-only tools only in Loop mode. Exact
 runtime tool inventory must match, and every profile requires a project-policy
 marker tool, before any prompt is accepted. Repository launcher discovery also

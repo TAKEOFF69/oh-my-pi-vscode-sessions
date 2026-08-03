@@ -29,7 +29,7 @@ test("work RPC launch uses repository launcher and exact parity", () => {
     "--rpc",
   ]);
   assert.equal(plan.parity?.modelId, "claude-opus-5");
-  assert.equal(plan.parity?.thinkingLevel, "max");
+  assert.equal(plan.parity?.thinkingLevel, "xhigh");
   assert.ok(plan.parity?.requiredTools.includes("edit"));
   assert.ok(plan.parity?.allowedTools.includes("hub"));
   assert.ok(!plan.parity?.allowedTools.includes("loop_control"));

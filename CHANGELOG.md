@@ -5,6 +5,28 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-08-03
+
+### Added
+
+- Codex-style Chats sidebar with recent sessions, one bottom-docked composer, and prompt-first
+  session creation. Opening or focusing the view never launches OMP by itself.
+- Prompt-derived session titles with persisted OMP names, manual-rename precedence, and exact
+  worktree/session-file resume for bounded recent history.
+
+### Changed
+
+- Dzialkopedia parity now requires Opus 5 at Extra High effort as primary driver and displays the
+  GPT-5.6 Sol Extra High advisor explicitly.
+- Successful preflight detail stays in the output channel so a new chat opens on conversation,
+  while blocking diagnostics remain visible in the session.
+
+### Fixed
+
+- First prompt is delivered exactly once after isolated-worktree provisioning and parity succeeds.
+- Sidebar submission is creation-guarded; failures restore the exact draft instead of spawning
+  repeated sessions.
+
 ## [2.2.2] - 2026-08-02
 
 ### Changed

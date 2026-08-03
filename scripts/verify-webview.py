@@ -6,6 +6,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = ROOT / "test" / "fixtures" / "rpc-webview-harness.html"
+SIDEBAR_HARNESS = ROOT / "test" / "fixtures" / "sidebar-webview-harness.html"
 OUTPUT = Path(gettempdir()) / "omp-rpc-ui-proof"
 
 
@@ -41,7 +42,7 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     else:
         page.locator(".message.advisory").wait_for()
         page.locator(".tool-card.complete").wait_for()
-        assert page.get_by_text("claude-opus-5", exact=False).is_visible()
+        assert page.get_by_text("Opus 5", exact=False).is_visible()
         assert page.get_by_text("loop_dispatch_plan", exact=True).is_visible()
         assert page.get_by_text("Stage scope is valid", exact=False).is_visible()
 
@@ -262,6 +263,104 @@ def verify_stream_performance(browser) -> float:
     return average
 
 
+def dispatch_sidebar(page, frame: dict) -> None:
+    page.evaluate(
+        """(frame) => new Promise((resolve) => {
+          window.dispatchEvent(new CustomEvent("omp-sidebar-frame", { detail: frame }));
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        })""",
+        frame,
+    )
+
+
+def verify_sidebar(browser, width: int, height: int, name: str) -> tuple[Path, float]:
+    page = browser.new_page(viewport={"width": width, "height": height})
+    errors: list[str] = []
+    page.on(
+        "console",
+        lambda message: errors.append(message.text)
+        if message.type == "error"
+        else None,
+    )
+    page.goto(SIDEBAR_HARNESS.as_uri())
+    page.wait_for_load_state("networkidle")
+    page.get_by_text("Chats", exact=True).wait_for()
+    page.get_by_text("Resume RCN classifier validation", exact=True).wait_for()
+    page.get_by_text("Opus 5 · Extra High", exact=True).wait_for()
+    page.get_by_text("Work locally", exact=True).wait_for()
+    assert page.locator("#composer-input").is_visible()
+    assert page.get_by_text("wip/20260803-omp-session", exact=False).count() == 0
+    assert page.get_by_text("New session", exact=False).count() == 0
+
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+    )
+    assert overflow <= 1, f"sidebar {name} horizontal overflow: {overflow}px"
+    local_context = page.locator(".local-context").bounding_box()
+    assert local_context
+    assert local_context["y"] + local_context["height"] <= height
+    assert local_context["y"] > height * 0.72, (
+        f"sidebar {name} composer is not bottom-docked: {local_context}"
+    )
+
+    screenshot = OUTPUT / f"sidebar-{name}.png"
+    page.screenshot(path=str(screenshot), full_page=True)
+
+    page.evaluate(
+        """() => {
+          window.__OMP_SIDEBAR_POSTS__ = [];
+          window.addEventListener("omp-sidebar-post", (event) => {
+            window.__OMP_SIDEBAR_POSTS__.push(event.detail);
+          });
+        }"""
+    )
+    composer = page.locator("#composer-input")
+    composer.fill("Recover exact RCN progress")
+    composer.press("Enter")
+    page.locator("#send-button").click(force=True)
+    posts = page.evaluate("() => window.__OMP_SIDEBAR_POSTS__")
+    creates = [post for post in posts if post.get("type") == "createSession"]
+    assert creates == [
+        {"type": "createSession", "prompt": "Recover exact RCN progress"}
+    ], f"sidebar {name} double-submitted first prompt: {creates}"
+
+    dispatch_sidebar(
+        page,
+        {
+            "type": "sessionCreationFailed",
+            "draft": "Recover exact RCN progress",
+            "detail": "fixture failure",
+        },
+    )
+    dispatch_sidebar(page, {"type": "state", "creating": False, "sessions": []})
+    assert composer.input_value() == "Recover exact RCN progress"
+    assert page.get_by_text("fixture failure", exact=True).is_visible()
+
+    sessions = [
+        {
+            "id": f"session-{index}",
+            "label": f"Contextual session {index}",
+            "cwd": f"C:\\worktrees\\session-{index}",
+            "kind": "work",
+            "status": "closed",
+            "active": False,
+            "live": False,
+            "updatedAt": 1_700_000_000_000 + index,
+        }
+        for index in range(50)
+    ]
+    started = page.evaluate("() => performance.now()")
+    dispatch_sidebar(page, {"type": "state", "creating": False, "sessions": sessions})
+    elapsed = float(page.evaluate("(start) => performance.now() - start", started))
+    page.get_by_text("View all (50)", exact=True).click()
+    assert page.locator(".chat-row").count() == 50
+    assert elapsed < 80, f"sidebar 50-row patch took {elapsed:.1f} ms"
+    assert not errors, f"sidebar {name} console errors: {errors}"
+
+    page.close()
+    return screenshot, elapsed
+
+
 def main() -> None:
     OUTPUT.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
@@ -280,11 +379,19 @@ def main() -> None:
             empty=True,
         )
         stream_average = verify_stream_performance(browser)
+        sidebar_narrow, sidebar_narrow_ms = verify_sidebar(
+            browser, 340, 980, "reference"
+        )
+        sidebar_wide, sidebar_wide_ms = verify_sidebar(
+            browser, 430, 800, "wide"
+        )
         browser.close()
     print(f"desktop={desktop}")
     print(f"narrow={narrow}")
     print(f"reference={reference}")
     print(f"stream_update_average_ms={stream_average:.1f}")
+    print(f"sidebar_reference={sidebar_narrow} ({sidebar_narrow_ms:.1f}ms)")
+    print(f"sidebar_wide={sidebar_wide} ({sidebar_wide_ms:.1f}ms)")
 
 
 if __name__ == "__main__":

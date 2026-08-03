@@ -58,9 +58,10 @@ input.on("line", (line) => {
         provider: "anthropic",
         id: "claude-opus-5",
       },
-      thinkingLevel: "max",
+      thinkingLevel: "xhigh",
       sessionId: `fake-session-${process.pid}`,
       sessionFile: `C:/tmp/fake-session-${process.pid}.jsonl`,
+      messageCount: 0,
       isStreaming: false,
       dumpTools: [
         { name: "read" },

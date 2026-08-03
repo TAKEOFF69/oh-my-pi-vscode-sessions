@@ -9,16 +9,21 @@ let activeManager: SessionManager | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const logger = new OutputSessionLogger();
-  const manager = new SessionManager(context.extensionUri, logger);
+  const manager = new SessionManager(
+    context.extensionUri,
+    logger,
+    context.workspaceState,
+  );
   activeManager = manager;
   logger.info(
     `Extension activated (workspace: ${vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).join(", ") || "none"})`,
   );
 
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider(
+    vscode.window.registerWebviewViewProvider(
       "ohMyPiSessions.sessions",
-      manager.tree,
+      manager.sidebar,
+      { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.commands.registerCommand("ohMyPiSessions.open", () =>
       manager.openOrCreate(),
@@ -147,7 +152,7 @@ export function activate(context: vscode.ExtensionContext): void {
       .getConfiguration("ohMyPiSessions")
       .get<boolean>("autoStart", false)
   ) {
-    void manager.newPrimarySession();
+    manager.focusNewSession();
   }
 }
 

@@ -17,6 +17,7 @@ import {
   validateRpcParity,
 } from "./parity";
 import { buildRpcHtml } from "./rpcHtml";
+import { InitialPromptOwnership } from "./initialPromptOwnership";
 import { classifyPreParityFrame } from "./preParity";
 import { PromptLifecycle } from "./promptLifecycle";
 import { TeardownBarrier } from "./teardownBarrier";
@@ -35,11 +36,16 @@ export type RpcSessionHostOptions = {
   executable: string;
   args: readonly string[];
   initialPrompt?: string;
+  resumeSessionFile?: string;
   parity?: RpcParityProfile;
   label: string;
   logger: SessionLogger;
   onStatusChange: (status: SessionStatus) => void;
-  onTitleChange: (title: string) => void;
+  onTitleChange: (
+    title: string,
+    source: "session" | "transient",
+  ) => boolean;
+  onSessionFileChange: (sessionFile: string) => void;
   onLoopHandoff: (alias: string) => void | Promise<void>;
 };
 
@@ -51,11 +57,14 @@ export class RpcSessionHost implements SessionHost {
   readonly #kind: string;
   readonly #executable: string;
   readonly #args: readonly string[];
-  readonly #initialPrompt: string | undefined;
   readonly #parity: RpcParityProfile | undefined;
   readonly #logger: SessionLogger;
   readonly #onStatusChange: (status: SessionStatus) => void;
-  readonly #onTitleChange: (title: string) => void;
+  readonly #onTitleChange: (
+    title: string,
+    source: "session" | "transient",
+  ) => boolean;
+  readonly #onSessionFileChange: (sessionFile: string) => void;
   readonly #onLoopHandoff: (alias: string) => void | Promise<void>;
   #label: string;
   #rpc: RpcProcess | undefined;
@@ -65,6 +74,8 @@ export class RpcSessionHost implements SessionHost {
   #parityFailed = false;
   #sessionFile: string | undefined;
   #resumeSessionFile: string | undefined;
+  #startupDiagnostics = "";
+  readonly #initialPromptOwnership: InitialPromptOwnership;
   #streaming = false;
   #preParityFrames: RpcFrame[] = [];
   #preParityBytes = 0;
@@ -84,12 +95,16 @@ export class RpcSessionHost implements SessionHost {
     this.#kind = options.kind;
     this.#executable = options.executable;
     this.#args = options.args;
-    this.#initialPrompt = options.initialPrompt;
+    this.#initialPromptOwnership = new InitialPromptOwnership(
+      options.initialPrompt,
+    );
+    this.#resumeSessionFile = options.resumeSessionFile;
     this.#parity = options.parity;
     this.#label = options.label;
     this.#logger = options.logger;
     this.#onStatusChange = options.onStatusChange;
     this.#onTitleChange = options.onTitleChange;
+    this.#onSessionFileChange = options.onSessionFileChange;
     this.#onLoopHandoff = options.onLoopHandoff;
 
     this.#webview.options = {
@@ -134,6 +149,17 @@ export class RpcSessionHost implements SessionHost {
 
   setLabel(label: string): void {
     this.#label = label;
+    const rpc = this.#rpc;
+    if (rpc?.running && this.#parityPassed) {
+      void rpc
+        .request({ type: "set_session_name", name: label })
+        .catch((error) =>
+          this.#logger.error(
+            `Failed to persist RPC session name "${label}"`,
+            error,
+          ),
+        );
+    }
   }
 
   dispose(): Promise<void> {
@@ -203,10 +229,11 @@ export class RpcSessionHost implements SessionHost {
           type: "bootstrap",
           cwd: this.#cwd,
           branch: this.#branch,
+          sessionName: this.#label,
           kind: this.#kind,
           advisorLabel:
             this.#parity?.name.startsWith("dzialki-")
-              ? "GPT-5.6 Sol · xhigh"
+              ? "GPT-5.6 Sol · Extra High"
               : "OMP project policy",
           parityRequired: Boolean(this.#parity),
         });
@@ -273,6 +300,7 @@ export class RpcSessionHost implements SessionHost {
       return;
     }
     const startedAt = Date.now();
+    this.#startupDiagnostics = "";
     this.#onStatusChange("starting");
     this.#logger.info(
       `Starting RPC "${this.#label}" in ${this.#cwd} with ${this.#executable}`,
@@ -297,7 +325,9 @@ export class RpcSessionHost implements SessionHost {
       const cleaned = text.trim();
       if (cleaned) {
         this.#logger.info(`[${this.#label}] ${cleaned}`);
-        void this.#post({ type: "stderr", text: cleaned });
+        this.#startupDiagnostics = `${this.#startupDiagnostics}\n${cleaned}`.slice(
+          -16_000,
+        );
       }
     });
     rpc.on("protocolError", (error: Error) => {
@@ -312,6 +342,7 @@ export class RpcSessionHost implements SessionHost {
         status: "failed",
         detail: error.message,
       });
+      void this.#restoreInitialPrompt();
     });
     rpc.on(
       "exit",
@@ -320,6 +351,7 @@ export class RpcSessionHost implements SessionHost {
           return;
         }
         this.#rpc = undefined;
+        void this.#restoreInitialPrompt();
         if (this.#disposed || this.#parityFailed) {
           return;
         }
@@ -328,9 +360,11 @@ export class RpcSessionHost implements SessionHost {
         void this.#post({
           type: "transport",
           status: failed ? "failed" : "exited",
-          detail: `OMP RPC exited with code ${code ?? "null"}${
-            signal ? ` (${signal})` : ""
-          }`,
+          detail: failed
+            ? startupFailureDetail(code, signal, this.#startupDiagnostics)
+            : `OMP RPC exited with code ${code ?? "null"}${
+                signal ? ` (${signal})` : ""
+              }`,
         });
       },
     );
@@ -355,11 +389,22 @@ export class RpcSessionHost implements SessionHost {
         ...state,
         cwd: this.#cwd,
       };
+      if (
+        this.#resumeSessionFile &&
+        typeof state.sessionName === "string" &&
+        this.#onTitleChange(state.sessionName, "session")
+      ) {
+        this.#label = state.sessionName;
+      }
       this.#sessionFile =
         typeof state.sessionFile === "string"
           ? state.sessionFile
           : this.#sessionFile;
+      if (this.#sessionFile) {
+        this.#onSessionFileChange(this.#sessionFile);
+      }
       if (!this.#validateParity(runtimeState)) {
+        await this.#restoreInitialPrompt();
         return;
       }
       this.#logger.info(
@@ -367,8 +412,18 @@ export class RpcSessionHost implements SessionHost {
       );
 
       const [history] = await Promise.all([
-        loadRpcMessageHistory(rpc),
+        state.messageCount === 0
+          ? Promise.resolve(emptyHistoryResponse())
+          : loadRpcMessageHistory(rpc),
         rpc.request({ type: "get_available_commands" }),
+        rpc
+          .request({ type: "set_session_name", name: this.#label })
+          .catch((error) => {
+            this.#logger.error(
+              `Failed to persist RPC session name "${this.#label}"`,
+              error,
+            );
+          }),
         rpc
           .request({
             type: "set_subagent_subscription",
@@ -394,8 +449,11 @@ export class RpcSessionHost implements SessionHost {
       );
       const restored = Boolean(this.#resumeSessionFile);
       this.#resumeSessionFile = undefined;
-      if (!restored && this.#initialPrompt) {
-        await this.#sendPrompt("prompt", this.#initialPrompt);
+      if (!restored) {
+        const initialPrompt = this.#initialPromptOwnership.claimForDelivery();
+        if (initialPrompt) {
+          await this.#sendPrompt("prompt", initialPrompt);
+        }
       }
     } catch (error) {
       if (this.#rpc !== rpc || this.#disposed) {
@@ -407,11 +465,22 @@ export class RpcSessionHost implements SessionHost {
       await this.#post({
         type: "transport",
         status: "failed",
-        detail: failure.message,
+        detail: startupFailureDetail(
+          null,
+          null,
+          `${failure.message}\n${this.#startupDiagnostics}`,
+        ),
       });
+      await this.#restoreInitialPrompt();
       this.#rpc = undefined;
       await this.#queueTeardown(rpc);
     }
+  }
+
+  async #restoreInitialPrompt(): Promise<void> {
+    const prompt = this.#initialPromptOwnership.claimForRestore();
+    if (!prompt || this.#disposed) return;
+    await this.#post({ type: "restoreDraft", text: prompt });
   }
 
   #validateParity(state: RpcSessionState): boolean {
@@ -483,6 +552,7 @@ export class RpcSessionHost implements SessionHost {
             );
           });
         }
+        void this.#restoreInitialPrompt();
       }
       return;
     }
@@ -561,9 +631,8 @@ export class RpcSessionHost implements SessionHost {
       case "session_info_update": {
         const title =
           typeof frame.title === "string" ? frame.title.trim() : "";
-        if (title) {
+        if (title && this.#onTitleChange(title, "session")) {
           this.#label = title;
-          this.#onTitleChange(title);
         }
         break;
       }
@@ -614,9 +683,8 @@ export class RpcSessionHost implements SessionHost {
     } else if (method === "setTitle") {
       const title =
         typeof frame.title === "string" ? frame.title.trim() : "";
-      if (title) {
+      if (title && this.#onTitleChange(title, "transient")) {
         this.#label = title;
-        this.#onTitleChange(title);
       }
     } else if (
       method === "set_editor_text" ||
@@ -794,6 +862,44 @@ export class RpcSessionHost implements SessionHost {
 
 function responseData(response: RpcResponse): Record<string, unknown> {
   return isRecord(response.data) ? response.data : {};
+}
+
+function emptyHistoryResponse(): RpcResponse {
+  return {
+    type: "response",
+    id: "vscode_message_history",
+    command: "get_messages",
+    success: true,
+    data: { messages: [] },
+  };
+}
+
+function startupFailureDetail(
+  code: number | null,
+  signal: string | null,
+  diagnostics: string,
+): string {
+  const lines = diagnostics
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const blockIndex = lines.findLastIndex((line) =>
+    /\[(?:BLOCK|FAIL)\]|preflight blocked|error:/i.test(line),
+  );
+  const selected =
+    blockIndex >= 0
+      ? lines.slice(blockIndex, blockIndex + 3)
+      : lines.slice(-3);
+  const cause = selected.join(" ").slice(0, 900);
+  const exit =
+    code === null && !signal
+      ? "OMP startup failed"
+      : `OMP RPC exited with code ${code ?? "null"}${
+          signal ? ` (${signal})` : ""
+        }`;
+  return cause
+    ? `${exit}. ${cause} Full diagnostics are in OMP Sessions logs.`
+    : `${exit}. Open OMP Sessions logs for diagnostics.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

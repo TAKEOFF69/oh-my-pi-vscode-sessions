@@ -22,7 +22,12 @@ import {
   sameLoopAlias,
 } from "../loopHandoff";
 import { SessionCreationGate } from "../sessionCreationGate";
+import { deriveSessionTitle } from "../sessionTitle";
 import { planAutomaticDirectory } from "../sessionDirectory";
+import {
+  SessionSidebarProvider,
+  type SidebarSession,
+} from "../sidebar/SessionSidebarProvider";
 import {
   listGitWorktrees,
   repositoryIdentity,
@@ -44,7 +49,10 @@ import {
   type SessionSpec,
   type SessionTransport,
 } from "./SessionPanel";
-import { SessionTreeProvider } from "./SessionTreeProvider";
+import {
+  RecentSessionStore,
+  type RecentSessionRecord,
+} from "./RecentSessionStore";
 
 type DirectoryChoice = vscode.QuickPickItem & {
   cwd?: string;
@@ -55,9 +63,10 @@ type DirectoryChoice = vscode.QuickPickItem & {
 type DirectoryMode = "auto" | "choose";
 
 export class SessionManager implements vscode.Disposable {
-  readonly tree = new SessionTreeProvider();
+  readonly sidebar: SessionSidebarProvider;
   readonly #extensionUri: vscode.Uri;
   readonly #logger: SessionLogger;
+  readonly #recent: RecentSessionStore;
   #sessions: SessionPanel[] = [];
   #active: SessionPanel | undefined;
   #writerLeases = new Map<string, WriterLease>();
@@ -71,10 +80,24 @@ export class SessionManager implements vscode.Disposable {
     new LoopHandoffSingleFlight<SessionPanel | undefined>();
   #acceptingSessions = true;
   #shutdownPromise: Promise<void> | undefined;
+  #resumeFlights = new Map<string, Promise<SessionPanel | undefined>>();
 
-  constructor(extensionUri: vscode.Uri, logger: SessionLogger) {
+  constructor(
+    extensionUri: vscode.Uri,
+    logger: SessionLogger,
+    workspaceState: vscode.Memento,
+  ) {
     this.#extensionUri = extensionUri;
     this.#logger = logger;
+    this.#recent = new RecentSessionStore(workspaceState);
+    this.sidebar = new SessionSidebarProvider(extensionUri, {
+      createSession: async (prompt) =>
+        Boolean(await this.newPrimarySession(prompt)),
+      focusSession: (id) => this.openSession(id),
+      showLogs: () => this.#logger.show(),
+    });
+    this.#refresh();
+    void this.#loadSidebarProfile();
   }
 
   get sessions(): readonly SessionPanel[] {
@@ -85,9 +108,20 @@ export class SessionManager implements vscode.Disposable {
     return this.#active;
   }
 
-  newPrimarySession(): Promise<SessionPanel | undefined> {
+  focusNewSession(): void {
+    this.sidebar.focusComposer(true);
+  }
+
+  newPrimarySession(
+    initialPrompt?: string,
+  ): Promise<SessionPanel | undefined> {
+    const prompt = initialPrompt;
+    if (!prompt?.trim()) {
+      this.focusNewSession();
+      return Promise.resolve(undefined);
+    }
     return this.#primarySessionGate.run(
-      () => this.newSession("work"),
+      () => this.newSession("work", "rpc", "auto", undefined, prompt),
       (reason) =>
         this.#logger.info(
           `Ignored duplicate New Session request (${reason})`,
@@ -100,6 +134,8 @@ export class SessionManager implements vscode.Disposable {
     transport: SessionTransport = "rpc",
     directoryMode: DirectoryMode = "auto",
     requestedLoopAlias?: string,
+    initialPrompt?: string,
+    resume?: RecentSessionRecord,
   ): Promise<SessionPanel | undefined> {
     if (!this.#acceptingSessions) {
       return Promise.resolve(undefined);
@@ -110,6 +146,8 @@ export class SessionManager implements vscode.Disposable {
         transport,
         directoryMode,
         requestedLoopAlias,
+        initialPrompt,
+        resume,
       ),
     );
     this.#creationQueue = opening.then(
@@ -124,6 +162,8 @@ export class SessionManager implements vscode.Disposable {
     transport: SessionTransport,
     directoryMode: DirectoryMode,
     requestedLoopAlias?: string,
+    initialPrompt?: string,
+    resume?: RecentSessionRecord,
   ): Promise<SessionPanel | undefined> {
     this.#logger.info(`New ${kind} ${transport} session requested`);
     let loopAlias = requestedLoopAlias?.trim();
@@ -160,12 +200,22 @@ export class SessionManager implements vscode.Disposable {
       }
     }
 
-    const directory =
-      directoryMode === "choose"
+    const directory = resume
+      ? { cwd: resume.cwd, branch: resume.branch }
+      : directoryMode === "choose"
         ? await this.#pickDirectory()
         : await this.#automaticDirectory(kind);
     if (!directory) {
       this.#logger.info(`New ${kind} session cancelled before directory selection`);
+      return undefined;
+    }
+    if (
+      resume &&
+      (!existsSync(directory.cwd) || !existsSync(resume.sessionFile))
+    ) {
+      await vscode.window.showErrorMessage(
+        "OMP Sessions: Saved chat cannot be reopened because its exact worktree or OMP session file is missing.",
+      );
       return undefined;
     }
     this.#logger.info(
@@ -266,10 +316,10 @@ export class SessionManager implements vscode.Disposable {
     resolvedKind = finalSafety.kind;
 
     const baseLabel =
+      resume?.label ??
       loopAlias ??
-      directory.branch ??
-      nodePath.basename(directory.cwd) ??
-      "OMP session";
+      (initialPrompt ? deriveSessionTitle(initialPrompt) : undefined) ??
+      (kind === "readonly" ? "Read-only chat" : "New chat");
     const label = this.#uniqueLabel(baseLabel);
     let writerLease: WriterLease | undefined;
     if (resolvedKind !== "readonly") {
@@ -308,16 +358,23 @@ export class SessionManager implements vscode.Disposable {
     }
 
     const spec: SessionSpec = {
-      id: crypto.randomUUID(),
+      id: resume?.id ?? crypto.randomUUID(),
       label,
       ...(loopAlias ? { loopAlias } : {}),
       cwd: directory.cwd,
       branch: directory.branch,
       kind: resolvedKind,
+      persistedKind: resume?.kind ?? resolvedKind,
       transport,
       executable: launch.executable,
       args: launch.args,
-      initialPrompt: launch.initialPrompt,
+      initialPrompt: resume
+        ? undefined
+        : initialPrompt ?? launch.initialPrompt,
+      resumeSessionFile: resume?.sessionFile,
+      titleSource: resume?.titleSource ??
+        (initialPrompt ? "provisional" : "runtime"),
+      updatedAt: resume?.updatedAt,
       parity: launch.parity,
     };
     this.#logger.info(
@@ -382,7 +439,36 @@ export class SessionManager implements vscode.Disposable {
       this.#active.reveal();
       return;
     }
-    await this.newPrimarySession();
+    this.focusNewSession();
+  }
+
+  async openSession(id: string): Promise<void> {
+    const live = this.#sessions.find((session) => session.id === id);
+    if (live) {
+      live.reveal();
+      return;
+    }
+    const record = this.#recent.find(id);
+    if (!record) return;
+    const existing = this.#resumeFlights.get(id);
+    if (existing) {
+      (await existing)?.reveal();
+      return;
+    }
+    const opening = this.newSession(
+      record.kind,
+      record.transport,
+      "auto",
+      record.loopAlias,
+      undefined,
+      record,
+    );
+    this.#resumeFlights.set(id, opening);
+    try {
+      (await opening)?.reveal();
+    } finally {
+      this.#resumeFlights.delete(id);
+    }
   }
 
   async resolveTarget(): Promise<SessionPanel | undefined> {
@@ -468,7 +554,8 @@ export class SessionManager implements vscode.Disposable {
       this.#shutdownPromise = (async () => {
         await this.#creationQueue;
         await this.closeAll();
-        this.tree.dispose();
+        await this.#recent.flush();
+        this.sidebar.dispose();
       })();
     }
     return this.#shutdownPromise;
@@ -714,12 +801,62 @@ export class SessionManager implements vscode.Disposable {
   }
 
   #refresh(): void {
-    this.tree.setSessions(this.#sessions);
+    for (const session of this.#sessions) {
+      if (!session.sessionFile || session.transport !== "rpc") continue;
+      this.#recent.upsert({
+        id: session.id,
+        label: session.label,
+        cwd: session.cwd,
+        ...(session.branch ? { branch: session.branch } : {}),
+        ...(session.loopAlias ? { loopAlias: session.loopAlias } : {}),
+        kind: session.persistedKind,
+        transport: "rpc",
+        sessionFile: session.sessionFile,
+        updatedAt: session.updatedAt,
+        titleSource: session.titleSource,
+      });
+    }
+    const liveIds = new Set(this.#sessions.map((session) => session.id));
+    const rows: SidebarSession[] = [
+      ...this.#sessions.map((session) => ({
+        id: session.id,
+        label: session.label,
+        kind: session.kind,
+        status: session.status,
+        active: session.active,
+        live: true,
+        updatedAt: session.updatedAt,
+      })),
+      ...this.#recent
+        .list()
+        .filter((record) => !liveIds.has(record.id))
+        .map((record) => ({
+          id: record.id,
+          label: record.label,
+          kind: record.kind,
+          status: "closed" as const,
+          active: false,
+          live: false,
+          updatedAt: record.updatedAt,
+        })),
+    ].sort((left, right) => right.updatedAt - left.updatedAt);
+    this.sidebar.setSessions(rows);
     void vscode.commands.executeCommand(
       "setContext",
       "ohMyPiSessions.hasSessions",
       this.#sessions.length > 0,
     );
+  }
+
+  async #loadSidebarProfile(): Promise<void> {
+    const identity = await repositoryIdentity(this.#workspaceRoots()[0]);
+    if (canonicalDzialkiOrigin(identity?.origin)) {
+      this.sidebar.setProfile({
+        accessLabel: "Full access",
+        modelLabel: "Opus 5 · Extra High",
+        modelDetail: "Primary driver; GPT-5.6 Sol Extra High advises each primary turn",
+      });
+    }
   }
 }
 
