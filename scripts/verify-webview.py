@@ -352,6 +352,7 @@ def verify_sidebar(browser, width: int, height: int, name: str) -> tuple[Path, f
     started = page.evaluate("() => performance.now()")
     dispatch_sidebar(page, {"type": "state", "creating": False, "sessions": sessions})
     elapsed = float(page.evaluate("(start) => performance.now() - start", started))
+    page.get_by_text("View all (50)", exact=True).click()
     assert page.locator(".chat-row").count() == 50
     assert elapsed < 80, f"sidebar 50-row patch took {elapsed:.1f} ms"
     assert not errors, f"sidebar {name} console errors: {errors}"

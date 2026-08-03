@@ -3,7 +3,7 @@ import {
   type RpcResponse,
 } from "./RpcProcess";
 
-const PAGE_LIMIT = 200;
+const PAGE_LIMIT = 256;
 const MAX_PAGES = 10_000;
 
 export type RpcRequester = {

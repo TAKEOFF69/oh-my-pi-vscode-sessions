@@ -36,7 +36,7 @@ test("sidebar exposes one primary New Session path", () => {
   );
   assert.match(
     sessionManagerSource,
-    /if \(!prompt\)[\s\S]{0,100}this\.focusNewSession\(\)/,
+    /if \(!prompt\?\.trim\(\)\)[\s\S]{0,100}this\.focusNewSession\(\)/,
   );
 });
 

@@ -7,6 +7,29 @@ export type SidebarWebviewMessage =
   | { type: "showLogs" }
   | { type: "openSettings" };
 
+export type SidebarFocusIntent = { sequence: number; clear: boolean };
+
+export class SidebarFocusQueue {
+  #sequence = 0;
+  #pending: SidebarFocusIntent | undefined;
+
+  begin(clear: boolean, viewReady: boolean): SidebarFocusIntent {
+    const intent = { sequence: ++this.#sequence, clear };
+    this.#pending = viewReady ? undefined : intent;
+    return intent;
+  }
+
+  deliveryFailed(intent: SidebarFocusIntent): void {
+    if (intent.sequence === this.#sequence) this.#pending = intent;
+  }
+
+  consumePending(): SidebarFocusIntent | undefined {
+    const pending = this.#pending;
+    this.#pending = undefined;
+    return pending;
+  }
+}
+
 export function parseSidebarWebviewMessage(
   raw: unknown,
 ): SidebarWebviewMessage | null {
@@ -17,8 +40,8 @@ export function parseSidebarWebviewMessage(
     case "openSettings":
       return { type: raw.type };
     case "createSession": {
-      const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
-      return prompt && Buffer.byteLength(prompt, "utf8") <= MAX_PROMPT_BYTES
+      const prompt = typeof raw.prompt === "string" ? raw.prompt : "";
+      return prompt.trim() && Buffer.byteLength(prompt, "utf8") <= MAX_PROMPT_BYTES
         ? { type: "createSession", prompt }
         : null;
     }

@@ -28,6 +28,7 @@ test("message history pages to exact total without monolithic frame", async () =
     "get_messages_page",
     "get_messages_page",
   ]);
+  assert.ok(commands.every((command) => command.limit === 256));
 });
 
 test("session-busy paging falls back to documented monolithic read", async () => {

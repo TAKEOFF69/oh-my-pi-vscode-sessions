@@ -61,6 +61,7 @@ input.on("line", (line) => {
       thinkingLevel: "xhigh",
       sessionId: `fake-session-${process.pid}`,
       sessionFile: `C:/tmp/fake-session-${process.pid}.jsonl`,
+      messageCount: 0,
       isStreaming: false,
       dumpTools: [
         { name: "read" },

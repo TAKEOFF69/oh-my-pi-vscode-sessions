@@ -5,6 +5,7 @@ import {
   deriveSessionTitle,
   infrastructureTitle,
   normalizeRuntimeSessionTitle,
+  shouldAcceptSessionTitle,
 } from "../src/sessionTitle";
 
 test("derives concise contextual titles from first meaningful prompt", () => {
@@ -13,6 +14,10 @@ test("derives concise contextual titles from first meaningful prompt", () => {
       "Can you inspect the RCN pipeline session and recover its progress?",
     ),
     "Inspect the RCN pipeline session and recover its progress",
+  );
+  assert.equal(
+    deriveSessionTitle("[OMP docs](https://example.test) please fix resume"),
+    "OMP docs please fix resume",
   );
   assert.equal(
     deriveSessionTitle("Look at this. Please make the OMP sidebar like Codex."),
@@ -26,6 +31,13 @@ test("derives concise contextual titles from first meaningful prompt", () => {
     deriveSessionTitle("Sprawdź polskie znaki i popraw nawigację sesji"),
     "Sprawdź polskie znaki i popraw nawigację sesji",
   );
+});
+
+test("only durable session metadata can refine automatic title", () => {
+  assert.equal(shouldAcceptSessionTitle("provisional", "transient"), false);
+  assert.equal(shouldAcceptSessionTitle("runtime", "transient"), false);
+  assert.equal(shouldAcceptSessionTitle("provisional", "session"), true);
+  assert.equal(shouldAcceptSessionTitle("manual", "session"), false);
 });
 
 test("never accepts infrastructure identity as chat title", () => {

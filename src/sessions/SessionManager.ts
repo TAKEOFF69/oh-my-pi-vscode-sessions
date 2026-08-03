@@ -97,6 +97,7 @@ export class SessionManager implements vscode.Disposable {
       showLogs: () => this.#logger.show(),
     });
     this.#refresh();
+    void this.#loadSidebarProfile();
   }
 
   get sessions(): readonly SessionPanel[] {
@@ -114,8 +115,8 @@ export class SessionManager implements vscode.Disposable {
   newPrimarySession(
     initialPrompt?: string,
   ): Promise<SessionPanel | undefined> {
-    const prompt = initialPrompt?.trim();
-    if (!prompt) {
+    const prompt = initialPrompt;
+    if (!prompt?.trim()) {
       this.focusNewSession();
       return Promise.resolve(undefined);
     }
@@ -363,6 +364,7 @@ export class SessionManager implements vscode.Disposable {
       cwd: directory.cwd,
       branch: directory.branch,
       kind: resolvedKind,
+      persistedKind: resume?.kind ?? resolvedKind,
       transport,
       executable: launch.executable,
       args: launch.args,
@@ -807,7 +809,7 @@ export class SessionManager implements vscode.Disposable {
         cwd: session.cwd,
         ...(session.branch ? { branch: session.branch } : {}),
         ...(session.loopAlias ? { loopAlias: session.loopAlias } : {}),
-        kind: session.kind,
+        kind: session.persistedKind,
         transport: "rpc",
         sessionFile: session.sessionFile,
         updatedAt: session.updatedAt,
@@ -848,6 +850,17 @@ export class SessionManager implements vscode.Disposable {
       "ohMyPiSessions.hasSessions",
       this.#sessions.length > 0,
     );
+  }
+
+  async #loadSidebarProfile(): Promise<void> {
+    const identity = await repositoryIdentity(this.#workspaceRoots()[0]);
+    if (canonicalDzialkiOrigin(identity?.origin)) {
+      this.sidebar.setProfile({
+        accessLabel: "Full access",
+        modelLabel: "Opus 5 · Extra High",
+        modelDetail: "Primary driver; GPT-5.6 Sol Extra High advises each primary turn",
+      });
+    }
   }
 }
 

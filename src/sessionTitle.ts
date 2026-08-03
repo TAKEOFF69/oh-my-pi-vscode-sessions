@@ -25,7 +25,7 @@ export function deriveSessionTitle(prompt: string): string {
   const candidates = prompt
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/<[^>]+>/g, " ")
-    .replace(/\[[^\]]+\]\([^\)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[`*_#>]/g, " ")
     .split(/(?:[.!?]+\s+)|(?:\r?\n)+/)
     .map(cleanCandidate)
@@ -47,6 +47,13 @@ export function normalizeRuntimeSessionTitle(
     return undefined;
   }
   return title;
+}
+
+export function shouldAcceptSessionTitle(
+  currentSource: SessionTitleSource,
+  incomingSource: "session" | "transient",
+): boolean {
+  return incomingSource === "session" && currentSource !== "manual";
 }
 
 export function infrastructureTitle(

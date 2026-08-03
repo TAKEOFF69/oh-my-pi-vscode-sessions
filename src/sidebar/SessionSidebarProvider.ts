@@ -1,19 +1,23 @@
 import * as vscode from "vscode";
 
 import type { SessionKind, SessionStatus } from "../sessions/SessionPanel";
-import { parseSidebarWebviewMessage } from "./messages";
+import { parseSidebarWebviewMessage, SidebarFocusQueue } from "./messages";
 import { buildSidebarHtml } from "./sidebarHtml";
 
 export type SidebarSession = {
   id: string;
   label: string;
-  cwd: string;
-  branch?: string;
   kind: SessionKind;
   status: SessionStatus | "closed";
   active: boolean;
   live: boolean;
   updatedAt: number;
+};
+
+export type SidebarProfile = {
+  accessLabel: string;
+  modelLabel: string;
+  modelDetail: string;
 };
 
 type SidebarCallbacks = {
@@ -30,7 +34,12 @@ export class SessionSidebarProvider
   #view: vscode.WebviewView | undefined;
   #sessions: readonly SidebarSession[] = [];
   #creating = false;
-  #pendingFocus: { clear: boolean } | undefined;
+  readonly #focusQueue = new SidebarFocusQueue();
+  #profile: SidebarProfile = {
+    accessLabel: "Custom access",
+    modelLabel: "OMP defaults",
+    modelDetail: "Effective model and advisor are verified when session starts",
+  };
   #disposables: vscode.Disposable[] = [];
 
   constructor(extensionUri: vscode.Uri, callbacks: SidebarCallbacks) {
@@ -62,10 +71,19 @@ export class SessionSidebarProvider
     void this.#postState();
   }
 
+  setProfile(profile: SidebarProfile): void {
+    this.#profile = profile;
+    void this.#postState();
+  }
+
   focusComposer(clear = false): void {
-    this.#pendingFocus = { clear };
+    const intent = this.#focusQueue.begin(clear, Boolean(this.#view));
     void vscode.commands.executeCommand("ohMyPiSessions.sessions.focus");
-    void this.#post({ type: "focusComposer", clear });
+    if (this.#view) {
+      void this.#post({ type: "focusComposer", clear }).then((delivered) => {
+        if (!delivered) this.#focusQueue.deliveryFailed(intent);
+      });
+    }
   }
 
   dispose(): void {
@@ -80,9 +98,9 @@ export class SessionSidebarProvider
     switch (message.type) {
       case "ready":
         await this.#postState();
-        if (this.#pendingFocus) {
-          const pending = this.#pendingFocus;
-          this.#pendingFocus = undefined;
+        {
+          const pending = this.#focusQueue.consumePending();
+          if (!pending) return;
           await this.#post({ type: "focusComposer", clear: pending.clear });
         }
         return;
@@ -135,6 +153,7 @@ export class SessionSidebarProvider
     return this.#post({
       type: "state",
       creating: this.#creating,
+      profile: this.#profile,
       sessions: this.#sessions,
     });
   }

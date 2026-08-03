@@ -7,6 +7,7 @@ import { TerminalSessionHost } from "../terminal/TerminalSessionHost";
 import type { SessionHost } from "./SessionHost";
 import {
   normalizeRuntimeSessionTitle,
+  shouldAcceptSessionTitle,
   type SessionTitleSource,
 } from "../sessionTitle";
 
@@ -34,6 +35,7 @@ export type SessionSpec = {
   titleSource?: SessionTitleSource;
   updatedAt?: number;
   parity?: RpcParityProfile;
+  persistedKind?: SessionKind;
 };
 
 export class SessionPanel implements vscode.Disposable {
@@ -93,6 +95,7 @@ export class SessionPanel implements vscode.Disposable {
 
     const statusChanged = (status: SessionStatus) => {
       this.#status = status;
+      this.#updatedAt = Date.now();
       this.#onChanged(this);
     };
     this.#host =
@@ -112,15 +115,15 @@ export class SessionPanel implements vscode.Disposable {
             label: spec.label,
             onStatusChange: statusChanged,
             onTitleChange: (title, source) => {
+              if (!shouldAcceptSessionTitle(this.#titleSource, source)) {
+                return false;
+              }
               const accepted = normalizeRuntimeSessionTitle(
                 title,
                 this.#spec.branch,
                 this.#spec.cwd,
               );
-              if (!accepted || this.#titleSource === "manual") return false;
-              if (source === "transient" && this.#titleSource === "runtime") {
-                return false;
-              }
+              if (!accepted) return false;
               this.#spec = { ...this.#spec, label: accepted };
               this.#titleSource = "runtime";
               this.#updatedAt = Date.now();
@@ -190,6 +193,10 @@ export class SessionPanel implements vscode.Disposable {
 
   get kind(): SessionKind {
     return this.#spec.kind;
+  }
+
+  get persistedKind(): SessionKind {
+    return this.#spec.persistedKind ?? this.#spec.kind;
   }
 
   get transport(): SessionTransport {

@@ -17,6 +17,7 @@ import {
   validateRpcParity,
 } from "./parity";
 import { buildRpcHtml } from "./rpcHtml";
+import { InitialPromptOwnership } from "./initialPromptOwnership";
 import { classifyPreParityFrame } from "./preParity";
 import { PromptLifecycle } from "./promptLifecycle";
 import { TeardownBarrier } from "./teardownBarrier";
@@ -56,7 +57,6 @@ export class RpcSessionHost implements SessionHost {
   readonly #kind: string;
   readonly #executable: string;
   readonly #args: readonly string[];
-  readonly #initialPrompt: string | undefined;
   readonly #parity: RpcParityProfile | undefined;
   readonly #logger: SessionLogger;
   readonly #onStatusChange: (status: SessionStatus) => void;
@@ -75,7 +75,7 @@ export class RpcSessionHost implements SessionHost {
   #sessionFile: string | undefined;
   #resumeSessionFile: string | undefined;
   #startupDiagnostics = "";
-  #initialPromptOwned = false;
+  readonly #initialPromptOwnership: InitialPromptOwnership;
   #streaming = false;
   #preParityFrames: RpcFrame[] = [];
   #preParityBytes = 0;
@@ -95,7 +95,9 @@ export class RpcSessionHost implements SessionHost {
     this.#kind = options.kind;
     this.#executable = options.executable;
     this.#args = options.args;
-    this.#initialPrompt = options.initialPrompt;
+    this.#initialPromptOwnership = new InitialPromptOwnership(
+      options.initialPrompt,
+    );
     this.#resumeSessionFile = options.resumeSessionFile;
     this.#parity = options.parity;
     this.#label = options.label;
@@ -299,7 +301,6 @@ export class RpcSessionHost implements SessionHost {
     }
     const startedAt = Date.now();
     this.#startupDiagnostics = "";
-    this.#initialPromptOwned = false;
     this.#onStatusChange("starting");
     this.#logger.info(
       `Starting RPC "${this.#label}" in ${this.#cwd} with ${this.#executable}`,
@@ -341,6 +342,7 @@ export class RpcSessionHost implements SessionHost {
         status: "failed",
         detail: error.message,
       });
+      void this.#restoreInitialPrompt();
     });
     rpc.on(
       "exit",
@@ -349,6 +351,7 @@ export class RpcSessionHost implements SessionHost {
           return;
         }
         this.#rpc = undefined;
+        void this.#restoreInitialPrompt();
         if (this.#disposed || this.#parityFailed) {
           return;
         }
@@ -386,6 +389,13 @@ export class RpcSessionHost implements SessionHost {
         ...state,
         cwd: this.#cwd,
       };
+      if (
+        this.#resumeSessionFile &&
+        typeof state.sessionName === "string" &&
+        this.#onTitleChange(state.sessionName, "session")
+      ) {
+        this.#label = state.sessionName;
+      }
       this.#sessionFile =
         typeof state.sessionFile === "string"
           ? state.sessionFile
@@ -394,6 +404,7 @@ export class RpcSessionHost implements SessionHost {
         this.#onSessionFileChange(this.#sessionFile);
       }
       if (!this.#validateParity(runtimeState)) {
+        await this.#restoreInitialPrompt();
         return;
       }
       this.#logger.info(
@@ -401,7 +412,9 @@ export class RpcSessionHost implements SessionHost {
       );
 
       const [history] = await Promise.all([
-        loadRpcMessageHistory(rpc),
+        state.messageCount === 0
+          ? Promise.resolve(emptyHistoryResponse())
+          : loadRpcMessageHistory(rpc),
         rpc.request({ type: "get_available_commands" }),
         rpc
           .request({ type: "set_session_name", name: this.#label })
@@ -436,9 +449,11 @@ export class RpcSessionHost implements SessionHost {
       );
       const restored = Boolean(this.#resumeSessionFile);
       this.#resumeSessionFile = undefined;
-      if (!restored && this.#initialPrompt) {
-        this.#initialPromptOwned = true;
-        await this.#sendPrompt("prompt", this.#initialPrompt);
+      if (!restored) {
+        const initialPrompt = this.#initialPromptOwnership.claimForDelivery();
+        if (initialPrompt) {
+          await this.#sendPrompt("prompt", initialPrompt);
+        }
       }
     } catch (error) {
       if (this.#rpc !== rpc || this.#disposed) {
@@ -456,15 +471,16 @@ export class RpcSessionHost implements SessionHost {
           `${failure.message}\n${this.#startupDiagnostics}`,
         ),
       });
-      if (this.#initialPrompt && !this.#initialPromptOwned) {
-        await this.#post({
-          type: "restoreDraft",
-          text: this.#initialPrompt,
-        });
-      }
+      await this.#restoreInitialPrompt();
       this.#rpc = undefined;
       await this.#queueTeardown(rpc);
     }
+  }
+
+  async #restoreInitialPrompt(): Promise<void> {
+    const prompt = this.#initialPromptOwnership.claimForRestore();
+    if (!prompt || this.#disposed) return;
+    await this.#post({ type: "restoreDraft", text: prompt });
   }
 
   #validateParity(state: RpcSessionState): boolean {
@@ -536,6 +552,7 @@ export class RpcSessionHost implements SessionHost {
             );
           });
         }
+        void this.#restoreInitialPrompt();
       }
       return;
     }
@@ -845,6 +862,16 @@ export class RpcSessionHost implements SessionHost {
 
 function responseData(response: RpcResponse): Record<string, unknown> {
   return isRecord(response.data) ? response.data : {};
+}
+
+function emptyHistoryResponse(): RpcResponse {
+  return {
+    type: "response",
+    id: "vscode_message_history",
+    command: "get_messages",
+    success: true,
+    data: { messages: [] },
+  };
 }
 
 function startupFailureDetail(
