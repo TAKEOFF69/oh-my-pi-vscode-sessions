@@ -6,9 +6,11 @@ import { test } from "node:test";
 
 import {
   CANONICAL_ADAPTER_PATHS,
+  CANONICAL_DZIALKI_NODE_ID,
   canonicalDzialkiOrigin,
   createCanonicalSnapshotLoader,
   detectProjectLauncher,
+  fetchCanonicalGitHubSnapshot,
   gitBlobSha,
   parseCanonicalAdapterPaths,
   resolveNodeExecutable,
@@ -111,6 +113,80 @@ test("canonical snapshot loader shares warmup and honors its TTL", async () => {
   now += 2;
   assert.equal(await load(), expected);
   assert.equal(loads, 2);
+});
+
+test("canonical GitHub snapshot accepts renamed alias only for stable repository identity", async () => {
+  const calls: string[] = [];
+  const preflight = `export const ADAPTER_PATHS = Object.freeze(${JSON.stringify(
+    CANONICAL_ADAPTER_PATHS,
+  )});`;
+  const tree = CANONICAL_ADAPTER_PATHS.map((path, index) => ({
+    type: "blob",
+    path,
+    sha: index === 0 ? "0".repeat(40) : `${index}`.padStart(40, "0"),
+  }));
+  const preflightEntry = tree.find(
+    (entry) => entry.path === "scripts/omp/preflight.mjs",
+  );
+  assert.ok(preflightEntry);
+  const snapshot = await fetchCanonicalGitHubSnapshot(async (endpoint) => {
+    calls.push(endpoint);
+    if (endpoint === "repos/mateusz-stawczyk/dzialki") {
+      return { node_id: CANONICAL_DZIALKI_NODE_ID };
+    }
+    if (endpoint.endsWith("/git/trees/main?recursive=1")) {
+      return { truncated: false, tree };
+    }
+    if (endpoint.endsWith(`/git/blobs/${preflightEntry.sha}`)) {
+      return {
+        encoding: "base64",
+        content: Buffer.from(preflight, "utf8").toString("base64"),
+      };
+    }
+    throw new Error(`unexpected endpoint: ${endpoint}`);
+  });
+  assert.deepEqual(snapshot.declaredPaths, CANONICAL_ADAPTER_PATHS);
+  assert.equal(calls[0], "repos/mateusz-stawczyk/dzialki");
+  assert.ok(calls.every((endpoint) => !endpoint.includes("attacker")));
+});
+
+test("canonical GitHub snapshot rejects a lookalike future namespace and falls back to current alias", async () => {
+  const calls: string[] = [];
+  const preflight = `export const ADAPTER_PATHS = Object.freeze(${JSON.stringify(
+    CANONICAL_ADAPTER_PATHS,
+  )});`;
+  const tree = CANONICAL_ADAPTER_PATHS.map((path, index) => ({
+    type: "blob",
+    path,
+    sha: `${index + 1}`.padStart(40, "0"),
+  }));
+  const preflightSha = tree.find(
+    (entry) => entry.path === "scripts/omp/preflight.mjs",
+  )?.sha;
+  assert.ok(preflightSha);
+  await fetchCanonicalGitHubSnapshot(async (endpoint) => {
+    calls.push(endpoint);
+    if (endpoint === "repos/mateusz-stawczyk/dzialki") {
+      return { node_id: "R_attacker" };
+    }
+    if (endpoint === "repos/TAKEOFF69/dzialki") {
+      return { node_id: CANONICAL_DZIALKI_NODE_ID };
+    }
+    if (endpoint.endsWith("/git/trees/main?recursive=1")) {
+      return { truncated: false, tree };
+    }
+    if (endpoint.endsWith(`/git/blobs/${preflightSha}`)) {
+      return {
+        encoding: "base64",
+        content: Buffer.from(preflight, "utf8").toString("base64"),
+      };
+    }
+    throw new Error(`unexpected endpoint: ${endpoint}`);
+  });
+  assert.deepEqual(calls.slice(0, 2), [
+    "repos/mateusz-stawczyk/dzialki",
+    "repos/TAKEOFF69/dzialki",
+  ]);
 });
 
 test("canonical snapshot loader never caches a failed lookup", async () => {
@@ -292,4 +368,12 @@ test("arbitrary lookalike launcher is never executed", async () => {
   );
   assert.equal(canonicalDzialkiOrigin("https://github.com/attacker/dzialki"), false);
   assert.equal(canonicalDzialkiOrigin("https://github.com/TAKEOFF69/dzialki.git"), true);
+  assert.equal(
+    canonicalDzialkiOrigin("https://github.com/mateusz-stawczyk/dzialki.git"),
+    true,
+  );
+  assert.equal(
+    canonicalDzialkiOrigin("https://github.com/mateusz-stawczyk/dzialki-fork.git"),
+    false,
+  );
 });
