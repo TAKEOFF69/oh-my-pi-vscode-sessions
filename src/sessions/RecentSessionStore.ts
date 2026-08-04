@@ -5,6 +5,10 @@ import type {
   SessionTransport,
 } from "./SessionPanel";
 import type { SessionTitleSource } from "../sessionTitle";
+import {
+  deriveSessionTitle,
+  infrastructureTitle,
+} from "../sessionTitle";
 
 const STORAGE_KEY = "ohMyPiSessions.recentSessions.v1";
 const MAX_RECENT_SESSIONS = 50;
@@ -86,9 +90,25 @@ function sanitizeRecords(raw: unknown): RecentSessionRecord[] {
     ) {
       continue;
     }
+    const titleSource =
+      value.titleSource === "manual" || value.titleSource === "runtime"
+        ? value.titleSource
+        : "provisional";
+    const storedLabel = value.label.trim();
+    const label = infrastructureTitle(
+      storedLabel,
+      typeof value.branch === "string" ? value.branch : undefined,
+      value.cwd,
+    )
+      ? typeof value.loopAlias === "string"
+        ? deriveSessionTitle(`/loop-start ${value.loopAlias}`)
+        : "Saved OMP chat"
+      : titleSource === "provisional"
+        ? deriveSessionTitle(storedLabel)
+        : storedLabel;
     records.push({
       id: value.id,
-      label: value.label,
+      label,
       cwd: value.cwd,
       ...(typeof value.branch === "string" ? { branch: value.branch } : {}),
       ...(typeof value.loopAlias === "string"
@@ -98,10 +118,7 @@ function sanitizeRecords(raw: unknown): RecentSessionRecord[] {
       transport: "rpc",
       sessionFile: value.sessionFile,
       updatedAt: value.updatedAt,
-      titleSource:
-        value.titleSource === "manual" || value.titleSource === "runtime"
-          ? value.titleSource
-          : "provisional",
+      titleSource,
     });
   }
   return records

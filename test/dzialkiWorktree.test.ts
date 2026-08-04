@@ -13,6 +13,7 @@ import { describe, it } from "node:test";
 import {
   bootstrapWorktree,
   provisionDzialkiWorktree,
+  provisionGitWorktree,
 } from "../src/dzialkiWorktree";
 
 describe("Dzialkopedia automatic worktree provisioning", () => {
@@ -69,7 +70,7 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
     const root = nodePath.resolve("C:/repo");
     const expectedCwd = nodePath.join(
       nodePath.dirname(root),
-      "dzialki-wt-20260728-omp-session-fixed",
+      "repo-wt-20260728-omp-session-fixed",
     );
     const expectedBranch = "wip/20260728-omp-session-fixed";
     const commands: Array<{ cwd: string; args: readonly string[] }> = [];
@@ -79,7 +80,8 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
     const result = await provisionDzialkiWorktree(root, "work", {
       suffix: () => "fixed",
       dateStamp: () => "20260728",
-      pathExists: () => false,
+      configureHooks: true,
+      pathExists: (candidate) => candidate.endsWith(".githooks"),
       runGit: async (cwd, args) => {
         commands.push({ cwd, args });
         const joined = args.join(" ");
@@ -112,7 +114,8 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
     assert.equal(validated, true);
     assert.equal(bootstrapped, true);
     assert.deepEqual(commands[0].args, ["fetch", "origin", "main"]);
-    assert.deepEqual(commands[1].args, [
+    assert.deepEqual(commands[1].args, ["rev-parse", "origin/main"]);
+    assert.deepEqual(commands[2].args, [
       "-c",
       "checkout.workers=4",
       "-c",
@@ -136,6 +139,43 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
       commands.some(({ args }) => args.includes("agent:start")),
       false,
     );
+  });
+
+  it("creates generic writer from local HEAD without fetch or bootstrap copying", async () => {
+    const root = nodePath.resolve("C:/generic-repo");
+    const commands: string[][] = [];
+    let bootstrapCalls = 0;
+    const result = await provisionGitWorktree(root, "work", {
+      suffix: () => "generic",
+      dateStamp: () => "20260804",
+      pathExists: () => false,
+      baseRef: "HEAD",
+      fetchOriginMain: false,
+      runGit: async (_cwd, args) => {
+        commands.push([...args]);
+        const joined = args.join(" ");
+        if (joined === "branch --show-current") {
+          return {
+            stdout: "wip/20260804-omp-session-generic\n",
+            stderr: "",
+          };
+        }
+        if (joined === "rev-parse HEAD") {
+          return { stdout: "abc123\n", stderr: "" };
+        }
+        return { stdout: "", stderr: "" };
+      },
+      bootstrap: async () => {
+        bootstrapCalls += 1;
+      },
+    });
+
+    assert.equal(result.branch, "wip/20260804-omp-session-generic");
+    assert.equal(commands.some((args) => args[0] === "fetch"), false);
+    assert.equal(commands.some((args) => args[0] === "config"), false);
+    assert.deepEqual(commands[0], ["rev-parse", "HEAD"]);
+    assert.equal(commands[1].at(-1), "HEAD");
+    assert.equal(bootstrapCalls, 1);
   });
 
   it("removes exact fresh worktree when validation fails", async () => {
@@ -235,6 +275,41 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
     );
     assert.equal(
       commands.some((args) => args[0] === "update-ref"),
+      false,
+    );
+  });
+
+  it("never removes a worktree after bootstrap begins", async () => {
+    const commands: string[][] = [];
+    await assert.rejects(
+      provisionDzialkiWorktree(nodePath.resolve("C:/repo"), "work", {
+        suffix: () => "bootstrap-fail",
+        dateStamp: () => "20260804",
+        pathExists: () => false,
+        runGit: async (_cwd, args) => {
+          commands.push([...args]);
+          const joined = args.join(" ");
+          if (joined === "branch --show-current") {
+            return {
+              stdout: "wip/20260804-omp-session-bootstrap-fail\n",
+              stderr: "",
+            };
+          }
+          if (joined === "rev-parse HEAD" || joined === "rev-parse origin/main") {
+            return { stdout: "abc123\n", stderr: "" };
+          }
+          return { stdout: "", stderr: "" };
+        },
+        bootstrap: async () => {
+          throw new Error("junction setup failed");
+        },
+      }),
+      /partial worktree was preserved/,
+    );
+    assert.equal(
+      commands.some(
+        (args) => args[0] === "worktree" && args[1] === "remove",
+      ),
       false,
     );
   });

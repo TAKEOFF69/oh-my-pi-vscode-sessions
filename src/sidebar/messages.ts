@@ -3,6 +3,7 @@ const MAX_PROMPT_BYTES = 1024 * 1024;
 export type SidebarWebviewMessage =
   | { type: "ready" }
   | { type: "createSession"; prompt: string }
+  | { type: "draftChanged"; draft: string }
   | { type: "focusSession"; id: string }
   | { type: "showLogs" }
   | { type: "openSettings" };
@@ -69,6 +70,11 @@ export function parseSidebarWebviewMessage(
         ? { type: "createSession", prompt }
         : null;
     }
+    case "draftChanged":
+      return typeof raw.draft === "string" &&
+        Buffer.byteLength(raw.draft, "utf8") <= MAX_PROMPT_BYTES
+        ? { type: "draftChanged", draft: raw.draft }
+        : null;
     case "focusSession":
       return typeof raw.id === "string" && raw.id.length > 0 && raw.id.length <= 128
         ? { type: "focusSession", id: raw.id }

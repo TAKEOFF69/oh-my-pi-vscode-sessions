@@ -73,6 +73,19 @@ test("project launcher resolves Node from PATH when extension host is Code.exe",
   );
 });
 
+test("project launcher resolves Node from a POSIX PATH", () => {
+  const node = "/opt/node/bin/node";
+  assert.equal(
+    resolveNodeExecutable({
+      execPath: "/usr/share/code/code",
+      pathValue: "/opt/node/bin:/usr/bin",
+      pathExists: (candidate) => candidate === node,
+      platform: "linux",
+    }),
+    node,
+  );
+});
+
 test("project launcher fails closed when real Node cannot be found", () => {
   assert.throws(
     () =>

@@ -1,4 +1,4 @@
-# Native multi-session editor tabs
+# Single-surface multi-session sidebar
 
 ## Goal
 
@@ -8,13 +8,15 @@ authentication, model discovery, extensions, skills, and session storage.
 ## User contract
 
 - One VS Code window may run many OMP sessions concurrently.
-- Every editor tab owns one PTY, one OMP process, and one explicit working directory.
+- One sidebar owns home, new-chat composer, recent list, and selected conversation drill-in.
+- Every live chat owns one OMP RPC process and one explicit working directory; normal chats create
+  no editor panel.
 - Writing sessions use distinct Git worktrees, enforced by atomic cross-process lease.
 - Multiple sessions may share a directory only in read-only mode. Read-only sessions
   remove `bash`, `edit`, `write`, and `task` from OMP's enabled tool list.
 - Loop controller session launches repository-owned `npm run omp:loop -- <alias>` profile
   and refuses an already-owned controller directory.
-- Closing a tab terminates only that tab's OMP process.
+- Back or chat switching never terminates process. Explicit Close terminates only that chat.
 - Source-file context routes to the active or explicitly selected OMP session.
 
 ## Architecture
@@ -22,14 +24,14 @@ authentication, model discovery, extensions, skills, and session storage.
 ```text
 OMP Sessions activity view
   └─ SessionManager
-      ├─ π main            → WebviewPanel → xterm → PTY → omp (repo root)
-      ├─ π wip/checkout    → WebviewPanel → xterm → PTY → omp (worktree A)
-      └─ π architecture    → WebviewPanel → xterm → PTY → omp (read-only)
+      ├─ home/recent composer
+      ├─ selected conversation presentation
+      └─ background RPC hosts → independent OMP processes → independent worktrees
 ```
 
-VS Code supplies native editor tabs and tab groups. The extension does not emulate
-tabs inside one webview. This keeps focus, rearranging, split groups, and tab closure
-consistent with other editor surfaces.
+Selected-session router attaches shared webview only to one host. Switching chats rehydrates
+history/runtime state and cannot cross-route prompts, approvals, or aborts. Background hosts keep
+receiving and buffering RPC events while not selected.
 
 `git worktree list --porcelain` is parsed without shell interpolation. Directory
 selection is explicit and shown in the session tree tooltip. Relative file links are
@@ -56,7 +58,7 @@ This avoids stale VS Code `PATH` state after installing OMP.
 
 Included:
 
-- concurrent native editor tabs;
+- concurrent background RPC sessions with one selected sidebar presentation;
 - single-action active-session sidebar;
 - picker-free current/dedicated-worktree default plus explicit advanced picker;
 - atomic cross-process writer leases with stale-PID recovery;
@@ -69,12 +71,12 @@ Included:
 Deferred:
 
 - restoring live PTYs after VS Code restarts;
-- creating or deleting Git worktrees;
-- RPC-native rich tool cards and inline diffs;
+- automatic cleanup of finished Git worktrees;
+- inline source diffs beyond current expandable tool evidence;
 - Loop-specific dispatch controls.
 
-OMP remains source of truth for agent runtime. A future rich UI should use OMP's RPC
-mode rather than reimplementing agent behavior.
+OMP remains source of truth for agent runtime. Rich presentation consumes OMP RPC and does not
+reimplement agent behavior.
 
 ## Acceptance checks
 
@@ -82,5 +84,5 @@ mode rather than reimplementing agent behavior.
 - Unit tests cover PTY spawning, Git worktree parsing, path remapping, and leases.
 - Production extension bundle builds.
 - VSIX packages without missing runtime assets.
-- Installed extension opens two simultaneous tabs bound to different directories.
-- Closing one tab leaves the other process running.
+- Installed extension opens two simultaneous chats bound to different directories without editor panels.
+- Switching or backing out of one chat leaves every process running.

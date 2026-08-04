@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose generic OMP/VS Code behavior
+title: "feature: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Scope
+      options:
+        - label: This can benefit generic OMP users and is not only private-project policy.
+        - label: I considered effects on concurrent sessions, process lifecycle, and worktree ownership.

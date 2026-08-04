@@ -52,6 +52,9 @@ const vscode: VsCodeApi =
         getState: () => undefined,
         setState: () => undefined,
       };
+const surfaceToken =
+  document.querySelector<HTMLMetaElement>('meta[name="omp-surface-token"]')
+    ?.content ?? "";
 
 let state: SidebarState = {
   creating: false,
@@ -59,7 +62,7 @@ let state: SidebarState = {
   profile: {
     accessLabel: "Custom access",
     modelLabel: "OMP defaults",
-    modelDetail: "Effective model and advisor are verified when session starts",
+    modelDetail: "Opus 5 Extra High driver; GPT-5.6 Sol Extra High advisor configured",
   },
 };
 let expanded = false;
@@ -136,6 +139,7 @@ window.addEventListener("omp-sidebar-frame", (event) =>
 );
 composer.addEventListener("input", () => {
   vscode.setState({ draft: composer.value });
+  post({ type: "draftChanged", draft: composer.value });
   resizeComposer();
   renderComposer();
 });
@@ -167,6 +171,7 @@ for (const frame of window.__OMP_SIDEBAR_FIXTURE__ ?? []) {
 render();
 
 function receiveHostMessage(raw: unknown): void {
+  if (surfaceToken && !messageMatchesSurface(raw, surfaceToken)) return;
   if (!isRecord(raw) || typeof raw.type !== "string") return;
   if (raw.type === "state") {
     state = {
@@ -179,9 +184,15 @@ function receiveHostMessage(raw: unknown): void {
     render();
   } else if (raw.type === "focusComposer") {
     newDraft(raw.clear === true);
+  } else if (raw.type === "setDraft") {
+    composer.value = typeof raw.draft === "string" ? raw.draft : "";
+    vscode.setState({ draft: composer.value });
+    resizeComposer();
+    renderComposer();
   } else if (raw.type === "sessionCreated") {
     composer.value = "";
     vscode.setState({ draft: "" });
+    post({ type: "draftChanged", draft: "" });
     creationError.hidden = true;
     resizeComposer();
     renderComposer();
@@ -268,6 +279,9 @@ function submit(): void {
   }
   creationError.hidden = true;
   state = { ...state, creating: true };
+  composer.value = "";
+  vscode.setState({ draft: "" });
+  resizeComposer();
   renderComposer();
   post({ type: "createSession", prompt });
 }
@@ -304,7 +318,15 @@ function relativeAge(timestamp: number): string {
 }
 
 function post(message: unknown): void {
-  vscode.postMessage(message);
+  vscode.postMessage(
+    surfaceToken && isRecord(message)
+      ? { ...message, surfaceToken }
+      : message,
+  );
+}
+
+function messageMatchesSurface(raw: unknown, expectedToken: string): boolean {
+  return isRecord(raw) && raw.surfaceToken === expectedToken;
 }
 
 function requireElement(id: string): HTMLElement {

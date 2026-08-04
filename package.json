@@ -1,8 +1,8 @@
 {
   "name": "oh-my-pi-vscode-sessions",
   "displayName": "Oh My Pi Sessions",
-  "description": "Run concurrent structured Oh My Pi RPC sessions in native VS Code editor tabs, each bound to its own folder or Git worktree.",
-  "version": "2.3.0",
+  "description": "Run concurrent Oh My Pi RPC chats in one Codex-style VS Code sidebar, with isolated Git worktrees behind each writing session.",
+  "version": "2.4.0",
   "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",
@@ -10,6 +10,11 @@
     "type": "git",
     "url": "https://github.com/TAKEOFF69/oh-my-pi-vscode-sessions"
   },
+  "homepage": "https://github.com/TAKEOFF69/oh-my-pi-vscode-sessions#readme",
+  "bugs": {
+    "url": "https://github.com/TAKEOFF69/oh-my-pi-vscode-sessions/issues"
+  },
+  "preview": true,
   "extensionKind": [
     "workspace"
   ],
@@ -17,6 +22,7 @@
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Machine Learning",
     "Other"
   ],
   "main": "./dist/extension.js",
@@ -29,6 +35,8 @@
     "tabs",
     "worktree",
     "sessions",
+    "coding-agent",
+    "multi-agent",
     "ai"
   ],
   "activationEvents": [
@@ -222,7 +230,7 @@
         "command": "ohMyPiSessions.searchSession",
         "key": "ctrl+f",
         "mac": "cmd+f",
-        "when": "activeWebviewPanelId == ohMyPiSessions.session"
+        "when": "focusedView == ohMyPiSessions.sessions"
       }
     ]
   },
@@ -251,7 +259,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.7.1",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }

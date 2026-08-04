@@ -1,5 +1,8 @@
 import * as vscode from "vscode";
+import { randomBytes } from "node:crypto";
 
+import type { RpcSessionHost } from "../rpc/RpcSessionHost";
+import { buildRpcHtml } from "../rpc/rpcHtml";
 import type { SessionKind, SessionStatus } from "../sessions/SessionPanel";
 import {
   parseSidebarWebviewMessage,
@@ -7,6 +10,8 @@ import {
   toSidebarSessionPayload,
 } from "./messages";
 import { buildSidebarHtml } from "./sidebarHtml";
+import { SelectedSessionRouter } from "./SelectedSessionRouter";
+import { messageMatchesSurface, tagSurfaceMessage } from "./surfaceRouting";
 
 export type SidebarSession = {
   id: string;
@@ -27,6 +32,7 @@ export type SidebarProfile = {
 type SidebarCallbacks = {
   createSession: (prompt: string) => Promise<boolean>;
   focusSession: (id: string) => Promise<void> | void;
+  clearActiveSession: () => void;
   showLogs: () => void;
 };
 
@@ -39,11 +45,14 @@ export class SessionSidebarProvider
   #ready = false;
   #sessions: readonly SidebarSession[] = [];
   #creating = false;
+  #homeDraft = "";
+  #surfaceToken = "";
+  readonly #router = new SelectedSessionRouter<vscode.Webview, RpcSessionHost>();
   readonly #focusQueue = new SidebarFocusQueue();
   #profile: SidebarProfile = {
-    accessLabel: "Custom access",
-    modelLabel: "OMP defaults",
-    modelDetail: "Effective model and advisor are verified when session starts",
+    accessLabel: "Full access",
+    modelLabel: "Opus 5 · Extra High",
+    modelDetail: "Opus 5 Extra High driver; GPT-5.6 Sol Extra High advisor configured",
   };
   #disposables: vscode.Disposable[] = [];
 
@@ -55,45 +64,67 @@ export class SessionSidebarProvider
   resolveWebviewView(view: vscode.WebviewView): void {
     this.#view = view;
     this.#ready = false;
-    view.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.#extensionUri, "dist"),
-      ],
-    };
-    view.webview.html = buildSidebarHtml(view.webview, this.#extensionUri);
     this.#disposables.push(
       view.webview.onDidReceiveMessage((raw) => {
         void this.#handleMessage(raw);
       }),
       view.onDidDispose(() => {
+        this.#router.selected?.host.detachWebview(view.webview);
         this.#view = undefined;
         this.#ready = false;
       }),
     );
+    this.#renderSurface();
   }
 
   setSessions(sessions: readonly SidebarSession[]): void {
     this.#sessions = sessions;
-    void this.#postState();
+    void this.#postHomeState();
   }
 
   setProfile(profile: SidebarProfile): void {
     this.#profile = profile;
-    void this.#postState();
+    void this.#postHomeState();
   }
 
-  focusComposer(clear = false): void {
-    const intent = this.#focusQueue.begin(clear, this.#ready);
-    void vscode.commands.executeCommand("ohMyPiSessions.sessions.focus");
+  showSession(id: string, host: RpcSessionHost): void {
+    const same = this.#router.isSelected(id, host);
+    if (!same) {
+      this.#detachConversation();
+      this.#router.select(id, host);
+      this.#ready = false;
+      this.#renderSurface();
+    }
+    void focusSidebar();
+    if (same && this.#ready) host.focus();
+  }
+
+  showHome(clearDraft = false): void {
+    if (clearDraft) this.#homeDraft = "";
+    const changed = Boolean(this.#router.selected);
+    this.#detachConversation();
+    this.#callbacks.clearActiveSession();
+    if (changed) {
+      this.#ready = false;
+      this.#renderSurface();
+    }
+    void focusSidebar();
+    const intent = this.#focusQueue.begin(clearDraft, this.#ready);
     if (this.#view && this.#ready) {
-      void this.#post({ type: "focusComposer", clear }).then((delivered) => {
-        if (!delivered) this.#focusQueue.deliveryFailed(intent);
-      });
+      void this.#post({ type: "focusComposer", clear: clearDraft }).then(
+        (delivered) => {
+          if (!delivered) this.#focusQueue.deliveryFailed(intent);
+        },
+      );
     }
   }
 
+  focusComposer(clear = false): void {
+    this.showHome(clear);
+  }
+
   dispose(): void {
+    this.#detachConversation();
     for (const disposable of this.#disposables) disposable.dispose();
     this.#disposables = [];
     this.#view = undefined;
@@ -101,17 +132,35 @@ export class SessionSidebarProvider
   }
 
   async #handleMessage(raw: unknown): Promise<void> {
+    if (!messageMatchesSurface(raw, this.#surfaceToken)) return;
+    if (this.#router.selected) {
+      if (isMessageType(raw, "showSessions")) {
+        this.showHome(false);
+        return;
+      }
+      if (isMessageType(raw, "newSession")) {
+        this.showHome(true);
+        return;
+      }
+      await this.#router.dispatch(raw);
+      return;
+    }
+
     const message = parseSidebarWebviewMessage(raw);
     if (!message) return;
     switch (message.type) {
       case "ready":
         this.#ready = true;
-        await this.#postState();
+        await this.#postHomeState();
+        await this.#post({ type: "setDraft", draft: this.#homeDraft });
         {
           const pending = this.#focusQueue.consumePending();
           if (!pending) return;
           await this.#post({ type: "focusComposer", clear: pending.clear });
         }
+        return;
+      case "draftChanged":
+        this.#homeDraft = message.draft;
         return;
       case "showLogs":
         this.#callbacks.showLogs();
@@ -134,11 +183,12 @@ export class SessionSidebarProvider
   async #createSession(prompt: string): Promise<void> {
     if (this.#creating) return;
     this.#creating = true;
-    await this.#postState();
+    this.#homeDraft = prompt;
+    await this.#postHomeState();
     try {
       const created = await this.#callbacks.createSession(prompt);
       if (created) {
-        await this.#post({ type: "sessionCreated" });
+        this.#homeDraft = "";
       } else {
         await this.#post({
           type: "sessionCreationFailed",
@@ -154,11 +204,40 @@ export class SessionSidebarProvider
       });
     } finally {
       this.#creating = false;
-      await this.#postState();
+      await this.#postHomeState();
     }
   }
 
-  #postState(): Thenable<boolean> | Promise<boolean> {
+  #renderSurface(): void {
+    const view = this.#view;
+    if (!view) return;
+    view.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this.#extensionUri],
+    };
+    this.#surfaceToken = randomBytes(16).toString("hex");
+    if (this.#router.selected) {
+      view.webview.html = buildRpcHtml(
+        view.webview,
+        this.#extensionUri,
+        this.#surfaceToken,
+      );
+      this.#router.attach(view.webview, this.#surfaceToken);
+    } else {
+      view.webview.html = buildSidebarHtml(
+        view.webview,
+        this.#extensionUri,
+        this.#surfaceToken,
+      );
+    }
+  }
+
+  #detachConversation(): void {
+    this.#router.clear(this.#view?.webview);
+  }
+
+  #postHomeState(): Thenable<boolean> | Promise<boolean> {
+    if (this.#router.selected || !this.#ready) return Promise.resolve(false);
     return this.#post({
       type: "state",
       creating: this.#creating,
@@ -168,6 +247,27 @@ export class SessionSidebarProvider
   }
 
   #post(message: unknown): Thenable<boolean> | Promise<boolean> {
-    return this.#view?.webview.postMessage(message) ?? Promise.resolve(false);
+    return this.#view?.webview.postMessage(
+      tagSurfaceMessage(message, this.#surfaceToken),
+    ) ?? Promise.resolve(false);
+  }
+}
+
+function isMessageType(raw: unknown, type: string): boolean {
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    !Array.isArray(raw) &&
+    (raw as { type?: unknown }).type === type
+  );
+}
+
+async function focusSidebar(): Promise<void> {
+  try {
+    await vscode.commands.executeCommand(
+      "workbench.view.extension.oh-my-pi-sessions",
+    );
+  } catch {
+    // Presentation routing must not fail if VS Code is already tearing down.
   }
 }

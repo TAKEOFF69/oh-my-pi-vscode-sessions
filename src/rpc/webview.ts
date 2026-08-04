@@ -54,6 +54,9 @@ const vscode: VsCodeApi =
         getState: () => undefined,
         setState: () => undefined,
       };
+const surfaceToken =
+  document.querySelector<HTMLMetaElement>('meta[name="omp-surface-token"]')
+    ?.content ?? "";
 
 const markdown = new MarkdownIt({
   html: false,
@@ -82,8 +85,8 @@ root.innerHTML = `
         <div id="session-name" class="session-name">OMP session</div>
       </div>
       <nav class="header-actions" aria-label="Chat actions">
-        <button id="sessions-button" class="icon-button" type="button" title="Show OMP sessions" aria-label="Show OMP sessions">
-          <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M4.5 5.5h11v8h-11zM7 3.5h6M7 15.5h6" /></svg>
+        <button id="sessions-button" class="icon-button" type="button" title="Back to chats" aria-label="Back to chats">
+          <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M12.5 4.5 7 10l5.5 5.5M7.5 10H16" /></svg>
         </button>
         <button id="settings-button" class="icon-button" type="button" title="Open OMP settings" aria-label="Open OMP settings">
           <svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 3.3v1.4M10 15.3v1.4M3.3 10h1.4M15.3 10h1.4M5.25 5.25l1 1M13.75 13.75l1 1M14.75 5.25l-1 1M6.25 13.75l-1 1" /></svg>
@@ -177,6 +180,7 @@ stream.addEventListener("scroll", () => {
 });
 composer.addEventListener("input", () => {
   vscode.setState({ draft: composer.value });
+  post({ type: "draftChanged", draft: composer.value });
   resizeComposer();
   renderCommandMenu();
   renderComposer();
@@ -334,6 +338,7 @@ for (const frame of window.__OMP_RPC_FIXTURE__ ?? []) {
 scheduleRender();
 
 function receiveHostMessage(raw: unknown): void {
+  if (surfaceToken && !messageMatchesSurface(raw, surfaceToken)) return;
   if (!isRecord(raw) || typeof raw.type !== "string") {
     return;
   }
@@ -406,12 +411,12 @@ function render(): void {
 
 function renderRail(): void {
   requireElement("session-name").textContent =
-    state.runtime.sessionName ||
-    state.runtime.branch ||
-    "OMP session";
+    state.runtime.sessionName || "New chat";
   const sessionPath = requireElement("session-path");
-  sessionPath.textContent = state.runtime.branch || "Current workspace";
-  sessionPath.title = state.runtime.cwd ?? "";
+  sessionPath.textContent = "";
+  sessionPath.title = state.runtime.cwd
+    ? `Working directory: ${state.runtime.cwd}`
+    : "Current workspace";
 
   const model = state.runtime.model?.id || "Model pending";
   const modelDisplay = formatModelLabel(model);
@@ -566,7 +571,9 @@ function updateMessageSlot(messages: UiMessage[]): void {
     renderedMessages.set(message.key, message);
   }
   for (const message of messages.slice(currentKeys.length)) {
-    slot.insertAdjacentHTML("beforeend", renderMessage(message));
+    // renderMessage escapes every interpolation and MarkdownIt has html=false.
+    // scripts/verify-webview.py exercises raw HTML, event handlers, and javascript: links.
+    slot.insertAdjacentHTML("beforeend", renderMessage(message)); // nosemgrep: typescript.react.security.audit.react-unsanitized-method.react-unsanitized-method
     renderedMessages.set(message.key, message);
   }
 }
@@ -626,16 +633,19 @@ function renderMessage(message: UiMessage): string {
     custom: message.customType || "OMP",
   }[message.role];
   const content = message.content.map(renderContent).join("");
+  const modelMeta =
+    message.model ||
+    (message.role === "advisory" ? state.runtime.advisorLabel : undefined);
   const showMeta =
     message.role !== "user" &&
-    (message.role !== "assistant" || Boolean(message.model) || message.streaming);
+    (message.role !== "assistant" || Boolean(modelMeta) || message.streaming);
   return `
     <article class="message ${message.role}" data-message-key="${escapeAttr(message.key)}">
       <div class="message-body">
         ${
           showMeta
             ? `<div class="message-meta"><strong>${escapeHtml(label)}</strong>${
-                message.model ? `<span>${escapeHtml(message.model)}</span>` : ""
+                modelMeta ? `<span>${escapeHtml(modelMeta)}</span>` : ""
               }${message.streaming ? "<span>working</span>" : ""}</div>`
             : ""
         }
@@ -985,6 +995,7 @@ function submit(type: "prompt" | "steer" | "follow_up"): void {
   post({ type, message });
   composer.value = "";
   vscode.setState({ draft: "" });
+  post({ type: "draftChanged", draft: "" });
   resizeComposer();
   commandMenu.hidden = true;
   renderComposer();
@@ -1021,7 +1032,15 @@ function toggleSearch(open: boolean): void {
 }
 
 function post(message: unknown): void {
-  vscode.postMessage(message);
+  vscode.postMessage(
+    surfaceToken && isRecord(message)
+      ? { ...message, surfaceToken }
+      : message,
+  );
+}
+
+function messageMatchesSurface(raw: unknown, expectedToken: string): boolean {
+  return isRecord(raw) && raw.surfaceToken === expectedToken;
 }
 
 function pretty(value: unknown): string {

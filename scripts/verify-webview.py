@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 from tempfile import gettempdir
 
@@ -83,11 +84,14 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
             "type": "bootstrap",
             "cwd": "C:\\worktrees\\startup-proof",
             "branch": "wip/startup-proof",
+            "sessionName": "Verify OMP startup",
             "kind": "work",
             "parityRequired": True,
         },
     )
     dispatch_frame(page, {"type": "transport", "status": "starting"})
+    assert page.locator("#session-name").inner_text() == "Verify OMP startup"
+    assert page.get_by_text("wip/startup-proof", exact=True).count() == 0
     page.locator("#composer-input").fill("send button regression proof")
     assert page.locator("#send-button").is_disabled(), (
         f"{name} send button enabled before runtime readiness"
@@ -96,9 +100,12 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     assert page.locator("#composer-input").input_value() == (
         "send button regression proof"
     ), f"{name} startup draft was cleared"
-    assert page.evaluate("() => window.__OMP_TEST_POSTS__") == [], (
-        f"{name} posted prompt before runtime readiness"
-    )
+    premature = [
+        post
+        for post in page.evaluate("() => window.__OMP_TEST_POSTS__")
+        if post.get("type") in {"prompt", "steer", "follow_up"}
+    ]
+    assert premature == [], f"{name} posted prompt before runtime readiness"
     dispatch_frame(page, {"type": "parity", "ok": True})
     dispatch_frame(page, {"type": "transport", "status": "ready"})
     assert page.locator("#send-button").is_enabled(), (
@@ -361,10 +368,115 @@ def verify_sidebar(browser, width: int, height: int, name: str) -> tuple[Path, f
     return screenshot, elapsed
 
 
+def verify_shared_surface_lifecycle(browser) -> None:
+    page = browser.new_page(viewport={"width": 430, "height": 900})
+    page.goto(SIDEBAR_HARNESS.as_uri())
+    page.wait_for_load_state("networkidle")
+    page.locator("#composer-input").fill("Start one shared-surface chat")
+    page.locator("#composer-input").press("Enter")
+    assert page.evaluate(
+        "() => JSON.parse(sessionStorage.getItem('omp-shared-view-state')).draft"
+    ) == "", "home prompt leaked into conversation webview state"
+
+    page.goto(f"{HARNESS.as_uri()}?empty=1")
+    page.wait_for_load_state("networkidle")
+    assert page.locator("#composer-input").input_value() == ""
+    dispatch_frame(page, {"type": "setComposer", "text": "per-chat draft"})
+    assert page.locator("#composer-input").input_value() == "per-chat draft"
+    page.evaluate(
+        """() => {
+          window.__OMP_TEST_POSTS__ = [];
+          window.addEventListener("omp-fixture-post", (event) => {
+            window.__OMP_TEST_POSTS__.push(event.detail);
+          });
+        }"""
+    )
+    page.locator("#sessions-button").click()
+    assert {"type": "showSessions"} in page.evaluate(
+        "() => window.__OMP_TEST_POSTS__"
+    )
+
+    page.goto(SIDEBAR_HARNESS.as_uri())
+    page.wait_for_load_state("networkidle")
+    dispatch_sidebar(page, {"type": "setDraft", "draft": ""})
+    assert page.locator("#composer-input").input_value() == ""
+    page.evaluate(
+        """() => {
+          window.__OMP_SIDEBAR_POSTS__ = [];
+          window.addEventListener("omp-sidebar-post", (event) => {
+            window.__OMP_SIDEBAR_POSTS__.push(event.detail);
+          });
+        }"""
+    )
+    page.get_by_text("Resume RCN classifier validation", exact=True).click()
+    assert {"type": "focusSession", "id": "rcn"} in page.evaluate(
+        "() => window.__OMP_SIDEBAR_POSTS__"
+    )
+    page.close()
+
+
+def verify_untrusted_markdown(browser) -> None:
+    page = browser.new_page(viewport={"width": 800, "height": 600})
+    page.goto(f"{HARNESS.as_uri()}?empty=1")
+    page.wait_for_load_state("networkidle")
+    page.evaluate("() => { window.__OMP_XSS_SENTINEL__ = 0; }")
+    payload = (
+        '<img src=x onerror="window.__OMP_XSS_SENTINEL__ = 1"> '
+        '<script>window.__OMP_XSS_SENTINEL__ = 2</script> '
+        '[unsafe](javascript:window.__OMP_XSS_SENTINEL__=3)'
+    )
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "message_start",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": payload}],
+                },
+            },
+        },
+    )
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": payload}],
+                },
+            },
+        },
+    )
+    message = page.locator(".message.assistant").last
+    message.wait_for()
+    assert page.evaluate("() => window.__OMP_XSS_SENTINEL__") == 0
+    assert message.locator("script").count() == 0
+    assert message.locator("img[onerror]").count() == 0
+    assert message.locator('a[href^="javascript:"]').count() == 0
+    assert "<script>" in message.inner_text()
+    page.close()
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--security-only",
+        action="store_true",
+        help="Run only untrusted Markdown/XSS regression",
+    )
+    args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
+        if args.security_only:
+            verify_untrusted_markdown(browser)
+            browser.close()
+            print("untrusted_markdown=PASS")
+            return
         desktop = verify_view(
             browser.new_page(viewport={"width": 1440, "height": 900}),
             "desktop",
@@ -378,6 +490,7 @@ def main() -> None:
             "reference-empty",
             empty=True,
         )
+        verify_untrusted_markdown(browser)
         stream_average = verify_stream_performance(browser)
         sidebar_narrow, sidebar_narrow_ms = verify_sidebar(
             browser, 340, 980, "reference"
@@ -385,6 +498,7 @@ def main() -> None:
         sidebar_wide, sidebar_wide_ms = verify_sidebar(
             browser, 430, 800, "wide"
         )
+        verify_shared_surface_lifecycle(browser)
         browser.close()
     print(f"desktop={desktop}")
     print(f"narrow={narrow}")

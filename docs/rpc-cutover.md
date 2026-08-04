@@ -1,4 +1,4 @@
-# RPC-native editor cutover
+# RPC-native sidebar cutover
 
 ## Outcome
 
@@ -6,7 +6,7 @@ Make OMP RPC mode the default session surface while keeping OMP itself as the on
 runtime. The extension renders structured OMP events; it does not reimplement planning,
 tools, skills, advisor behavior, model routing, session storage, or Loop authority.
 
-One editor tab still owns:
+Each live chat still owns:
 
 - one OMP process;
 - one OMP session;
@@ -18,7 +18,7 @@ command. It is never an automatic fallback and never runs beside an RPC session.
 
 ## UX direction
 
-The editor tab follows Codex's quiet native-chat hierarchy while retaining OMP evidence:
+The one sidebar follows Codex's quiet native-chat hierarchy while retaining OMP evidence:
 
 - compact `Chats` header for session directory, settings, and duplicate-gated New Session;
 - flat readable conversation canvas with restrained user/assistant separation;
@@ -31,17 +31,18 @@ The editor tab follows Codex's quiet native-chat hierarchy while retaining OMP e
 
 Runtime status stays available through compact header indicator, composer state, and tooltips. Flat
 canvas and muted VS Code theme variables dominate; yellow marks access/execution, red marks real
-failures. Native editor tabs remain intentional multi-session boundary.
+failures. Independent background hosts and writer leases remain multi-session boundary; normal
+chat navigation creates no editor panel.
 
 ## Runtime architecture
 
 ```text
 SessionManager
-  -> SessionPanel (native WebviewPanel)
-     -> RpcSessionHost
-        -> RpcProcess (stdio JSONL, protocol v2)
-           -> repository launcher --rpc
-              -> exact OMP runtime + project extension
+  -> Sidebar WebviewView (one selected presentation)
+  -> selected-session router
+     -> RpcSessionHost[] (independent background hosts)
+        -> RpcProcess[] (stdio JSONL, protocol v2)
+           -> exact OMP runtimes + isolated worktrees
 ```
 
 `RpcProcess` owns:
@@ -58,6 +59,7 @@ SessionManager
 - initial state/history/command hydration;
 - runtime parity validation before first user or Loop prompt;
 - OMP event forwarding to the webview;
+- detached-session frame buffering and selected-view rehydration;
 - extension UI request/response routing;
 - file/URL/log/diagnostic-terminal VS Code actions;
 - status mapping for the session tree.
@@ -91,7 +93,7 @@ and runtime fixtures.
 
 Any parity defect:
 
-1. is rendered in the editor tab;
+1. is rendered in selected sidebar conversation;
 2. marks the session failed;
 3. blocks initial `/loop-start` and all user prompts;
 4. terminates the mismatched OMP process;
@@ -149,7 +151,7 @@ it can revert unrelated changes under parallel worktree activity.
 - Project launcher selftests prove `--rpc` is owned, stdout remains protocol-clean, and Loop
   initial prompt is host-driven.
 - Webview reducer tests cover streaming, tool progress, notices, advisor cards, and UI requests.
-- Static webview browser pass covers desktop and narrow editor widths.
+- Static webview browser pass covers desktop and narrow sidebar widths.
 - RPC lifecycle fixture launches real child processes, renders canonical frames through reducers,
   round-trips confirmation, steers, aborts, and keeps two processes independently addressable.
 - Pre-parity extension UI requests are cancelled without opening URLs, editors, or dialogs.
@@ -159,7 +161,7 @@ it can revert unrelated changes under parallel worktree activity.
   only under a trusted project launcher; generic TUI acquires a writer lease, and generic RPC
   read-only fails closed because ambient extension/MCP mutations cannot be excluded.
 - Packaged VSIX contains extension host plus RPC JS/CSS bundles and installs as sole OMP extension.
-- Installed-tab activation still requires manual visual confirmation when Windows UI automation
+- Installed-sidebar activation still requires manual visual confirmation when Windows UI automation
   is unavailable; static browser proof is not mislabeled as native VS Code interaction.
-- Real OMP smoke requires completed provider authentication; if unavailable, cutover remains
-  explicitly auth-blocked rather than being claimed from fixtures.
+- Real OMP 17.1.3 smoke proved `anthropic/claude-opus-5` with `xhigh` under extension role overlay.
+  Advisor identity remains configuration-bound because current `get_state` does not expose it.

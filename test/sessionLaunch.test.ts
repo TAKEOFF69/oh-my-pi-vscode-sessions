@@ -31,9 +31,9 @@ test("work RPC launch uses repository launcher and exact parity", () => {
   assert.equal(plan.parity?.modelId, "claude-opus-5");
   assert.equal(plan.parity?.thinkingLevel, "xhigh");
   assert.ok(plan.parity?.requiredTools.includes("edit"));
-  assert.ok(plan.parity?.allowedTools.includes("hub"));
-  assert.ok(!plan.parity?.allowedTools.includes("loop_control"));
-  assert.ok(plan.parity?.allowedTools.includes("loop_handoff"));
+  assert.ok(plan.parity?.allowedTools?.includes("hub"));
+  assert.ok(!plan.parity?.allowedTools?.includes("loop_control"));
+  assert.ok(plan.parity?.allowedTools?.includes("loop_handoff"));
 });
 
 test("read-only RPC launch excludes mutations", () => {
@@ -109,17 +109,58 @@ test("diagnostic TUI launch never receives RPC mode", () => {
   assert.equal(plan.parity, undefined);
 });
 
+test("generic diagnostic TUI keeps exact driver and advisor roles", () => {
+  const plan = buildSessionLaunchPlan({
+    kind: "work",
+    transport: "terminal",
+    cwd: "C:\\repo",
+    fallbackExecutable: "omp.exe",
+    defaultArguments: [
+      "--model=old",
+      "--no-advisor",
+      "--smol=old-smol",
+      "--slow",
+      "old-slow",
+      "--plan=old-plan",
+    ],
+    roleConfigPath: "C:\\extension\\config\\driver.yml",
+  });
+  assert.deepEqual(plan.args, [
+    "--config=C:\\extension\\config\\driver.yml",
+    "--model=anthropic/claude-opus-5",
+    "--thinking=xhigh",
+    "--smol=openai-codex/gpt-5.6-luna:max",
+    "--slow=anthropic/claude-opus-5:xhigh",
+    "--plan=anthropic/claude-opus-5:xhigh",
+    "--advisor",
+  ]);
+  assert.equal(plan.parity, undefined);
+});
+
 test("generic RPC uses direct OMP mode and Loop fails closed", () => {
-  assert.deepEqual(
-    buildSessionLaunchPlan({
+  const plan = buildSessionLaunchPlan({
       kind: "work",
       transport: "rpc",
       cwd: "C:\\repo",
       fallbackExecutable: "omp.exe",
-      defaultArguments: ["--advisor"],
-    }).args,
-    ["--advisor", "--mode=rpc"],
-  );
+      defaultArguments: ["--model", "old", "--thinking=high", "--advisor"],
+      roleConfigPath: "C:\\extension\\config\\driver.yml",
+    });
+  assert.deepEqual(plan.args, [
+    "--config=C:\\extension\\config\\driver.yml",
+    "--model=anthropic/claude-opus-5",
+    "--thinking=xhigh",
+    "--smol=openai-codex/gpt-5.6-luna:max",
+    "--slow=anthropic/claude-opus-5:xhigh",
+    "--plan=anthropic/claude-opus-5:xhigh",
+    "--advisor",
+    "--mode=rpc",
+  ]);
+  assert.equal(plan.parity?.name, "generic-work");
+  assert.equal(plan.parity?.modelId, "claude-opus-5");
+  assert.equal(plan.parity?.thinkingLevel, "xhigh");
+  assert.equal(plan.parity?.allowedTools, undefined);
+  assert.ok(plan.parity?.requiredTools.includes("write"));
   assert.throws(
     () =>
       buildSessionLaunchPlan({

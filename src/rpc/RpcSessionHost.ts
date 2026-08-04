@@ -15,21 +15,21 @@ import {
   type RpcParityProfile,
   type RpcSessionState,
   validateRpcParity,
+  validateRpcRuntimeConfigFrame,
 } from "./parity";
-import { buildRpcHtml } from "./rpcHtml";
 import { InitialPromptOwnership } from "./initialPromptOwnership";
 import { classifyPreParityFrame } from "./preParity";
 import { PromptLifecycle } from "./promptLifecycle";
+import { tagSurfaceMessage } from "../sidebar/surfaceRouting";
 import { TeardownBarrier } from "./teardownBarrier";
 import {
   RpcProcess,
   type RpcFrame,
   type RpcResponse,
 } from "./RpcProcess";
+import { RpcViewReplayBuffer } from "./RpcViewReplayBuffer";
 
 export type RpcSessionHostOptions = {
-  extensionUri: vscode.Uri;
-  webview: vscode.Webview;
   cwd: string;
   branch?: string;
   kind: string;
@@ -50,8 +50,9 @@ export type RpcSessionHostOptions = {
 };
 
 export class RpcSessionHost implements SessionHost {
-  readonly #extensionUri: vscode.Uri;
-  readonly #webview: vscode.Webview;
+  #webview: vscode.Webview | undefined;
+  #surfaceToken = "";
+  #attachmentRevision = 0;
   readonly #cwd: string;
   readonly #branch: string | undefined;
   readonly #kind: string;
@@ -74,6 +75,13 @@ export class RpcSessionHost implements SessionHost {
   #parityFailed = false;
   #sessionFile: string | undefined;
   #resumeSessionFile: string | undefined;
+  #historySnapshot: RpcResponse | undefined;
+  #commandsSnapshot: RpcResponse | undefined;
+  #activeTurnFrames: RpcFrame[] = [];
+  #activeTurnBytes = 0;
+  #activeTurnOverflow = false;
+  readonly #viewReplay = new RpcViewReplayBuffer<RpcFrame>();
+  #viewDraft = "";
   #startupDiagnostics = "";
   readonly #initialPromptOwnership: InitialPromptOwnership;
   #streaming = false;
@@ -88,8 +96,6 @@ export class RpcSessionHost implements SessionHost {
   #disposables: vscode.Disposable[] = [];
 
   constructor(options: RpcSessionHostOptions) {
-    this.#extensionUri = options.extensionUri;
-    this.#webview = options.webview;
     this.#cwd = options.cwd;
     this.#branch = options.branch;
     this.#kind = options.kind;
@@ -106,17 +112,28 @@ export class RpcSessionHost implements SessionHost {
     this.#onTitleChange = options.onTitleChange;
     this.#onSessionFileChange = options.onSessionFileChange;
     this.#onLoopHandoff = options.onLoopHandoff;
+  }
 
-    this.#webview.options = {
-      enableScripts: true,
-      localResourceRoots: [options.extensionUri],
-    };
-    this.#webview.html = buildRpcHtml(this.#webview, this.#extensionUri);
-    this.#disposables.push(
-      this.#webview.onDidReceiveMessage((raw) =>
-        void this.#handleWebviewMessage(raw),
-      ),
-    );
+  attachWebview(webview: vscode.Webview, surfaceToken: string): void {
+    if (this.#disposed) return;
+    this.#webview = webview;
+    this.#surfaceToken = surfaceToken;
+    this.#attachmentRevision += 1;
+    this.#webviewReady = false;
+    this.#cancelRehydration();
+  }
+
+  detachWebview(webview?: vscode.Webview): void {
+    if (webview && this.#webview !== webview) return;
+    this.#webview = undefined;
+    this.#surfaceToken = "";
+    this.#attachmentRevision += 1;
+    this.#webviewReady = false;
+    this.#cancelRehydration();
+  }
+
+  async handleWebviewMessage(raw: unknown): Promise<void> {
+    await this.#handleWebviewMessage(raw);
   }
 
   send(data: string): void {
@@ -197,6 +214,13 @@ export class RpcSessionHost implements SessionHost {
     this.#parityPassed = false;
     this.#parityFailed = false;
     this.#streaming = false;
+    this.#historySnapshot = undefined;
+    this.#commandsSnapshot = undefined;
+    this.#activeTurnFrames = [];
+    this.#activeTurnBytes = 0;
+    this.#activeTurnOverflow = false;
+    this.#viewReplay.clearPendingUiRequests();
+    this.#cancelRehydration();
     this.#onStatusChange("starting");
     if (drafts.length > 0) {
       await this.#post({
@@ -223,27 +247,29 @@ export class RpcSessionHost implements SessionHost {
     }
     switch (message.type) {
       case "ready":
+      {
+        const attachmentRevision = this.#attachmentRevision;
         this.#webviewReady = true;
         this.#logger.info(`RPC webview ready for "${this.#label}"`);
-        await this.#post({
-          type: "bootstrap",
-          cwd: this.#cwd,
-          branch: this.#branch,
-          sessionName: this.#label,
-          kind: this.#kind,
-          advisorLabel:
-            this.#parity?.name.startsWith("dzialki-")
-              ? "GPT-5.6 Sol · Extra High"
-              : "OMP project policy",
-          parityRequired: Boolean(this.#parity),
-        });
+        await this.#postBootstrap(attachmentRevision);
         if (!this.#rpc) {
           await this.#startRpc();
+        } else {
+          await this.#rehydrateWebview(attachmentRevision);
         }
+        await this.#post(
+          { type: "setComposer", text: this.#viewDraft },
+          attachmentRevision,
+        );
+        return;
+      }
+      case "draftChanged":
+        this.#viewDraft = message.draft;
         return;
       case "prompt":
       case "steer":
       case "follow_up":
+        this.#viewDraft = "";
         await this.#sendPrompt(message.type, message.message);
         return;
       case "abort":
@@ -261,6 +287,7 @@ export class RpcSessionHost implements SessionHost {
         } else {
           response.cancelled = message.cancelled ?? true;
         }
+        this.#viewReplay.resolveUiRequest(message.id);
         this.#rpc?.send(response);
         await this.#post({ type: "removeRequest", id: message.id });
         return;
@@ -310,6 +337,7 @@ export class RpcSessionHost implements SessionHost {
       args: this.#args,
       cwd: this.#cwd,
       startupTimeoutMs: 45_000,
+      emitTitleEvents: true,
     });
     this.#rpc = rpc;
     rpc.on("frame", (frame: RpcFrame) => {
@@ -383,6 +411,17 @@ export class RpcSessionHost implements SessionHost {
           sessionPath: this.#resumeSessionFile,
         });
       }
+      if (this.#parity) {
+        await rpc.request({
+          type: "set_model",
+          provider: this.#parity.provider,
+          modelId: this.#parity.modelId,
+        });
+        await rpc.request({
+          type: "set_thinking_level",
+          level: this.#parity.thinkingLevel,
+        });
+      }
       const stateResponse = await rpc.request({ type: "get_state" });
       const state = responseData(stateResponse);
       const runtimeState: RpcSessionState = {
@@ -411,19 +450,11 @@ export class RpcSessionHost implements SessionHost {
         `RPC parity ready for "${this.#label}": ${Date.now() - startedAt} ms`,
       );
 
-      const [history] = await Promise.all([
+      const [history, commands] = await Promise.all([
         state.messageCount === 0
           ? Promise.resolve(emptyHistoryResponse())
           : loadRpcMessageHistory(rpc),
         rpc.request({ type: "get_available_commands" }),
-        rpc
-          .request({ type: "set_session_name", name: this.#label })
-          .catch((error) => {
-            this.#logger.error(
-              `Failed to persist RPC session name "${this.#label}"`,
-              error,
-            );
-          }),
         rpc
           .request({
             type: "set_subagent_subscription",
@@ -440,8 +471,12 @@ export class RpcSessionHost implements SessionHost {
       if (this.#rpc !== rpc || this.#disposed) {
         return;
       }
+      this.#historySnapshot = history;
+      this.#commandsSnapshot = commands;
+      await this.#post({ type: "rpc", frame: stateResponse });
       this.#handleRpcFrame(history);
       await this.#post({ type: "rpc", frame: history });
+      await this.#post({ type: "rpc", frame: commands });
       this.#onStatusChange("idle");
       await this.#post({ type: "transport", status: "ready" });
       this.#logger.info(
@@ -495,10 +530,21 @@ export class RpcSessionHost implements SessionHost {
         );
       }
       void this.#post({ type: "parity", ok: true });
-      this.#flushPreParityFrames();
-      return true;
+      return this.#flushPreParityFrames();
     }
-    const detail = formatRpcParityFindings(findings);
+    return this.#blockParity(formatRpcParityFindings(findings));
+  }
+
+  #validateRuntimeConfig(frame: RpcFrame): boolean {
+    if (!this.#parity) return true;
+    const findings = validateRpcRuntimeConfigFrame(frame, this.#parity);
+    if (findings.length === 0) return true;
+    return this.#blockParity(
+      `Runtime model lock changed after startup.\n${formatRpcParityFindings(findings)}`,
+    );
+  }
+
+  #blockParity(detail: string): false {
     this.#parityFailed = true;
     this.#parityPassed = false;
     this.#logger.error(`RPC parity blocked "${this.#label}": ${detail}`);
@@ -506,6 +552,13 @@ export class RpcSessionHost implements SessionHost {
     void this.#post({ type: "parity", ok: false, detail });
     this.#preParityFrames = [];
     this.#preParityBytes = 0;
+    const drafts = this.#promptLifecycle.drain();
+    if (drafts.length > 0) {
+      void this.#post({
+        type: "restoreDraft",
+        text: drafts.join("\n\n"),
+      });
+    }
     const rpc = this.#rpc;
     this.#rpc = undefined;
     if (rpc) {
@@ -556,18 +609,25 @@ export class RpcSessionHost implements SessionHost {
       }
       return;
     }
+    if (!this.#validateRuntimeConfig(frame)) return;
+    this.#observeRpcFrame(frame);
     this.#handleRpcFrame(frame);
-    void this.#post({ type: "rpc", frame });
+    this.#deliverRpcFrame(frame);
   }
 
-  #flushPreParityFrames(): void {
+  #flushPreParityFrames(): boolean {
     const buffered = this.#preParityFrames;
     this.#preParityFrames = [];
     this.#preParityBytes = 0;
     for (const frame of buffered) {
+      // Startup set_model/set_thinking_level responses are intentionally
+      // buffered and may omit the resulting state in OMP 17.1.3. The full
+      // get_state snapshot was validated immediately before this flush.
+      this.#observeRpcFrame(frame);
       this.#handleRpcFrame(frame);
-      void this.#post({ type: "rpc", frame });
+      this.#deliverRpcFrame(frame);
     }
+    return true;
   }
 
   #rejectPreParityUiRequest(frame: RpcFrame): void {
@@ -855,8 +915,180 @@ export class RpcSessionHost implements SessionHost {
     });
   }
 
-  #post(message: unknown): Thenable<boolean> {
-    return this.#webview.postMessage(message);
+  #post(message: unknown, attachmentRevision?: number): Thenable<boolean> {
+    if (
+      isRecord(message) &&
+      (message.type === "restoreDraft" || message.type === "setComposer") &&
+      typeof message.text === "string"
+    ) {
+      this.#viewDraft = message.text;
+    }
+    if (
+      attachmentRevision !== undefined &&
+      attachmentRevision !== this.#attachmentRevision
+    ) {
+      return Promise.resolve(false);
+    }
+    const webview = this.#webview;
+    const surfaceToken = this.#surfaceToken;
+    return webview && surfaceToken
+      ? webview.postMessage(tagSurfaceMessage(message, surfaceToken))
+      : Promise.resolve(false);
+  }
+
+  async #postBootstrap(attachmentRevision: number): Promise<void> {
+    await this.#post({
+      type: "bootstrap",
+      cwd: this.#cwd,
+      branch: this.#branch,
+      sessionName: this.#label,
+      kind: this.#kind,
+      advisorLabel: this.#parity
+        ? "Configured: GPT-5.6 Sol · Extra High"
+        : "OMP project policy",
+      parityRequired: Boolean(this.#parity),
+    }, attachmentRevision);
+  }
+
+  async #rehydrateWebview(attachmentRevision: number): Promise<void> {
+    const rpc = this.#rpc;
+    if (
+      !rpc?.running ||
+      !this.#webviewReady ||
+      attachmentRevision !== this.#attachmentRevision
+    ) return;
+    this.#viewReplay.begin(attachmentRevision);
+    try {
+      const stateResponse = await rpc.request({ type: "get_state" });
+      if (attachmentRevision !== this.#attachmentRevision) return;
+      await this.#post(
+        { type: "rpc", frame: stateResponse },
+        attachmentRevision,
+      );
+      await this.#post({
+        type: "parity",
+        ok: this.#parityPassed && !this.#parityFailed,
+        ...(!this.#parityPassed || this.#parityFailed
+          ? { detail: "Runtime parity has not passed" }
+          : {}),
+      }, attachmentRevision);
+      if (!this.#parityPassed || this.#parityFailed) return;
+      this.#historySnapshot = await loadRpcMessageHistory(rpc);
+      if (attachmentRevision !== this.#attachmentRevision) return;
+      const activeTurnAtBoundary = this.#activeTurnOverflow
+        ? []
+        : [...this.#activeTurnFrames];
+      const pendingAtBoundary = this.#viewReplay.pendingUiRequests();
+      // get_messages is authoritative for everything emitted before its
+      // response. Keep only frames arriving after that protocol boundary.
+      this.#viewReplay.resetAtHistoryBoundary(attachmentRevision);
+      await this.#post(
+        { type: "rpc", frame: this.#historySnapshot },
+        attachmentRevision,
+      );
+      if (this.#commandsSnapshot) {
+        await this.#post(
+          { type: "rpc", frame: this.#commandsSnapshot },
+          attachmentRevision,
+        );
+      }
+      for (const frame of activeTurnAtBoundary) {
+        if (attachmentRevision !== this.#attachmentRevision) return;
+        await this.#post(
+          { type: "rpc", frame },
+          attachmentRevision,
+        );
+      }
+      const activeRequestIds = new Set(
+        activeTurnAtBoundary
+          .filter((frame) => frame.type === "extension_ui_request")
+          .map((frame) => (typeof frame.id === "string" ? frame.id : "")),
+      );
+      for (const frame of pendingAtBoundary) {
+        if (attachmentRevision !== this.#attachmentRevision) return;
+        if (typeof frame.id === "string" && activeRequestIds.has(frame.id)) {
+          continue;
+        }
+        await this.#post({ type: "rpc", frame }, attachmentRevision);
+      }
+      await this.#drainRehydrationFrames(attachmentRevision);
+      await this.#post(
+        { type: "transport", status: "ready" },
+        attachmentRevision,
+      );
+    } catch (error) {
+      this.#logger.error(
+        `Failed to restore RPC view for "${this.#label}"`,
+        error,
+      );
+      await this.#post({
+        type: "transport",
+        status: "failed",
+        detail: error instanceof Error ? error.message : String(error),
+      }, attachmentRevision);
+    } finally {
+      this.#viewReplay.finish(attachmentRevision);
+    }
+  }
+
+  #observeRpcFrame(frame: RpcFrame): void {
+    this.#viewReplay.observeUiRequest(frame);
+    if (frame.type === "agent_start" && !this.#streaming) {
+      this.#activeTurnFrames = [];
+      this.#activeTurnBytes = 0;
+      this.#activeTurnOverflow = false;
+    }
+    if (frame.type === "agent_start" || this.#streaming) {
+      this.#rememberActiveTurnFrame(frame);
+    }
+    if (
+      (frame.type === "agent_end" && frame.isTerminal !== false) ||
+      (frame.type === "prompt_result" && frame.agentInvoked === false)
+    ) {
+      this.#activeTurnFrames = [];
+      this.#activeTurnBytes = 0;
+      this.#activeTurnOverflow = false;
+    }
+  }
+
+  #deliverRpcFrame(frame: RpcFrame): void {
+    if (this.#viewReplay.capture(this.#attachmentRevision, frame)) return;
+    void this.#post({ type: "rpc", frame });
+  }
+
+  async #drainRehydrationFrames(attachmentRevision: number): Promise<void> {
+    while (
+      attachmentRevision === this.#attachmentRevision
+    ) {
+      const frames = this.#viewReplay.drain(attachmentRevision);
+      if (frames.length === 0) {
+        this.#viewReplay.finish(attachmentRevision);
+        return;
+      }
+      for (const frame of frames) {
+        await this.#post({ type: "rpc", frame }, attachmentRevision);
+      }
+    }
+  }
+
+  #cancelRehydration(): void {
+    this.#viewReplay.cancel();
+  }
+
+  #rememberActiveTurnFrame(frame: RpcFrame): void {
+    if (this.#activeTurnOverflow) return;
+    const bytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
+    if (
+      this.#activeTurnFrames.length >= 4096 ||
+      this.#activeTurnBytes + bytes > 8 * 1024 * 1024
+    ) {
+      this.#activeTurnFrames = [];
+      this.#activeTurnBytes = 0;
+      this.#activeTurnOverflow = true;
+      return;
+    }
+    this.#activeTurnFrames.push(frame);
+    this.#activeTurnBytes += bytes;
   }
 }
 
