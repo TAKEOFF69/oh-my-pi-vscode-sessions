@@ -1,8 +1,9 @@
 # Oh My Pi Sessions
 
 Run multiple independent [Oh My Pi](https://github.com/can1357/oh-my-pi)
-sessions in one VS Code window. Each OMP process opens as a native editor tab and
-has its own working directory, structured RPC state, and lifecycle.
+sessions in one Codex-style VS Code sidebar. Chat list, new-chat composer, and selected
+conversation drill-in all occupy same sidebar column; each background OMP process still has
+its own working directory, structured RPC state, and lifecycle.
 
 ## Why this fork exists
 
@@ -21,11 +22,11 @@ the interface orchestrates sessions while OMP remains the agent runtime.
 
 1. Open **OMP Sessions** from the activity bar.
 2. Type into the bottom composer and send. The prompt creates one isolated session.
-3. Work in the new OMP editor tab with conversation, advisor, tool, retry,
-   compaction, and subagent events rendered directly.
-4. If conversation calls for Loop v2, OMP requests an isolated controller tab
+3. Same sidebar becomes selected conversation; Back returns to chat list without stopping that
+   session. Advisor, tool, retry, compaction, and subagent events render directly.
+4. If conversation calls for Loop v2, OMP requests an isolated controller chat
    automatically through `loop_handoff`.
-5. Repeat. Tabs run concurrently and may be moved into VS Code split groups.
+5. Repeat. Chats run concurrently in background processes and switch through same sidebar.
 
 One VS Code window can therefore contain:
 
@@ -34,11 +35,13 @@ One VS Code window can therefore contain:
 - several implementation sessions in separate worktrees;
 - ordinary source editors alongside all of them.
 
-Sidebar and structured tabs use a quiet Codex-like surface. Sidebar shows smart conversation names
-instead of branch/worktree identifiers, bounded recent history, and one bottom composer. Session
-tabs keep text-first messages, expandable OMP evidence, and real project access/model/effort state.
-Native editor tabs remain the concurrent runtime surface; UI does not duplicate or weaken worktree
-ownership.
+Single sidebar shows smart conversation names instead of branch/worktree identifiers, bounded
+recent history, one bottom composer, text-first messages, expandable OMP evidence, and real
+project access/model/effort state. Concurrent runtime ownership remains one OMP process and one
+writer worktree per chat; switching presentation does not stop or merge those runtimes.
+
+Normal extension sessions lock Claude Opus 5 at Extra High as driver and GPT-5.6 Sol at Extra High
+as advisor, with model fallback disabled. OMP OAuth credentials remain in OMP's own auth storage.
 
 For Dzialkopedia, standard session exposes narrow `loop_handoff` tool but never
 direct Loop lifecycle or dispatch tools. Once user and Opus decide Loop is right,
@@ -47,9 +50,10 @@ runtime parity, then sends `/loop-start <alias>`. Mismatched model, effort, cwd,
 tool surface blocks before controller starts.
 
 The rule is **one writing session per worktree**, not one VS Code window per
-worktree. Atomic leases under shared Git directory enforce this across tabs,
+worktree. Atomic leases under shared Git directory enforce this across chats,
 windows, and extension-host restarts; stale process owners are recovered. If
-Submitting first prompt prepares a fresh isolated worktree from `origin/main` through
+submitting first prompt in Dzialkopedia, extension prepares a fresh isolated worktree from
+`origin/main` through
 extension-owned Git operations, validates canonical Dzialkopedia adapter before
 launch, then bootstraps local dependencies and environment. Old session worktrees
 are never silently reused, so unfinished parallel work cannot bleed into new
@@ -80,7 +84,7 @@ session worktree; missing or unrelated targets are refused.
 Windows installation at `%LOCALAPPDATA%\omp\omp.exe` is detected automatically,
 even when VS Code was opened before the installer changed `PATH`.
 
-Selected worktree wins over lobby workspace: when
+Trusted Dzialkopedia worktree wins over lobby workspace: when
 `scripts/omp/launch.mjs` exists, tab starts repository-owned launcher from that
 worktree. Read-only tab adds repository's `--read-only` profile.
 
@@ -157,9 +161,10 @@ Default shortcut for a new session:
 - Windows/Linux: `Ctrl+Shift+Alt+I`
 - macOS: `Cmd+Shift+Alt+I`
 
-Standard session is picker-free. Generic projects use current workspace.
-Dzialkopedia always creates and bootstraps fresh `*-omp-session-*` worktree from
-`origin/main`; shared `main` is management-only and never receives OMP writer.
+Standard session is picker-free. Generic Git projects create fresh `*-omp-session-*` writer
+worktree from current `HEAD` without copying `.env*` or other checkout-local files; non-Git folders
+use current workspace. Dzialkopedia instead provisions canonical `origin/main`, then validates and
+bootstraps its repository-owned launcher; shared `main` is management-only and never receives OMP writer.
 Loop handoff creates fresh `*-omp-loop-session-*` worktree. Existing worktrees are
 opened only through advanced chooser when explicit branch selection is intended.
 
@@ -171,19 +176,20 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.2.1.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.4.0.vsix --force
 ```
 
 ## Current boundary
 
-Tabs are native VS Code webview panels connected to real OMP RPC processes.
-Processes live concurrently while the window is open. Closing a tab or deactivating
-the extension terminates its full process tree and waits for reaping before releasing its
+Normal chats are one VS Code `WebviewView` connected to independently running OMP RPC processes.
+Processes live concurrently while window is open. Explicitly closing a chat or deactivating
+extension terminates its full process tree and waits for reaping before releasing its
 worktree writer lease;
 OMP's session file remains available for restart and resume. Repository root,
 nested-folder, and junction selections share one canonical lease identity.
 
-Generic filesystem rollback/checkpoints are intentionally excluded: under parallel
+Advanced diagnostic TUI remains only path that intentionally opens an editor panel. Generic
+filesystem rollback/checkpoints are intentionally excluded: under parallel
 worktrees they can revert unrelated work. OMP custom TUI-only components are not
 fabricated; use the explicit diagnostic TUI when investigating one.
 

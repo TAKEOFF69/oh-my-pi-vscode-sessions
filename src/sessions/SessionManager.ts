@@ -16,14 +16,20 @@ import {
   type ProjectLauncher,
   warmCanonicalDzialkiAdapterSnapshot,
 } from "../projectLauncher";
-import { provisionDzialkiWorktree } from "../dzialkiWorktree";
+import {
+  bootstrapWorktree,
+  provisionGitWorktree,
+} from "../dzialkiWorktree";
 import {
   LoopHandoffSingleFlight,
   sameLoopAlias,
 } from "../loopHandoff";
 import { SessionCreationGate } from "../sessionCreationGate";
 import { deriveSessionTitle } from "../sessionTitle";
-import { planAutomaticDirectory } from "../sessionDirectory";
+import {
+  planAutomaticDirectory,
+  provisionManagementRoot,
+} from "../sessionDirectory";
 import {
   SessionSidebarProvider,
   type SidebarSession,
@@ -53,6 +59,7 @@ import {
   RecentSessionStore,
   type RecentSessionRecord,
 } from "./RecentSessionStore";
+import { clearSessionSelection } from "./sessionSelection";
 
 type DirectoryChoice = vscode.QuickPickItem & {
   cwd?: string;
@@ -94,10 +101,15 @@ export class SessionManager implements vscode.Disposable {
       createSession: async (prompt) =>
         Boolean(await this.newPrimarySession(prompt)),
       focusSession: (id) => this.openSession(id),
+      clearActiveSession: () => this.#clearActiveSession(),
       showLogs: () => this.#logger.show(),
     });
     this.#refresh();
-    void this.#loadSidebarProfile();
+    this.sidebar.setProfile({
+      accessLabel: "Full access",
+      modelLabel: "Opus 5 · Extra High",
+      modelDetail: "Opus 5 Extra High driver; GPT-5.6 Sol Extra High advisor configured",
+    });
   }
 
   get sessions(): readonly SessionPanel[] {
@@ -346,6 +358,11 @@ export class SessionManager implements vscode.Disposable {
         projectLauncher,
         fallbackExecutable: getExecutable(),
         defaultArguments: getDefaultArguments(),
+        roleConfigPath: vscode.Uri.joinPath(
+          this.#extensionUri,
+          "config",
+          "driver.yml",
+        ).fsPath,
       });
     } catch (error) {
       await writerLease?.release();
@@ -400,7 +417,7 @@ export class SessionManager implements vscode.Disposable {
       this.#writerLeases.set(session.id, writerLease);
     }
     this.#sessions.push(session);
-    this.#active = session;
+    session.reveal();
     this.#refresh();
     return session;
   }
@@ -429,7 +446,7 @@ export class SessionManager implements vscode.Disposable {
       opened?.reveal();
     } else if (opened) {
       await vscode.window.showInformationMessage(
-        `Loop "${alias}" opened in isolated controller tab.`,
+        `Loop "${alias}" opened in isolated controller chat.`,
       );
     }
   }
@@ -522,7 +539,7 @@ export class SessionManager implements vscode.Disposable {
     const label = await vscode.window.showInputBox({
       title: "Rename OMP session",
       value: target.label,
-      prompt: "Editor tab and session-list label",
+      prompt: "Conversation and recent-chat label",
       validateInput: (value) => (value.trim() ? undefined : "Name is required"),
     });
     if (label === undefined) {
@@ -611,6 +628,7 @@ export class SessionManager implements vscode.Disposable {
         .map((session) => session.cwd),
       kind,
       canonicalDzialki: canonicalDzialkiOrigin(identity?.origin),
+      gitRepository: Boolean(identity),
       launcherExists: (cwd) =>
         existsSync(nodePath.join(cwd, "scripts", "omp", "launch.mjs")),
     });
@@ -621,10 +639,12 @@ export class SessionManager implements vscode.Disposable {
       return plan.directory;
     }
     if (plan.action === "create") {
-      const managementRoot =
-        worktrees.find(
-          (worktree) => worktree.branch === "main",
-        )?.path ?? identity?.root;
+      const isDzialki = canonicalDzialkiOrigin(identity?.origin);
+      const managementRoot = provisionManagementRoot({
+        currentRepositoryRoot: identity?.root,
+        worktrees,
+        canonicalDzialki: isDzialki,
+      });
       if (!managementRoot) {
         await vscode.window.showErrorMessage(
           "OMP Sessions: Could not locate canonical Dzialkopedia checkout for isolated session.",
@@ -633,14 +653,20 @@ export class SessionManager implements vscode.Disposable {
       }
       try {
         let validatedLauncher: ProjectLauncher | undefined;
-        warmCanonicalDzialkiAdapterSnapshot();
+        if (isDzialki) warmCanonicalDzialkiAdapterSnapshot();
         const created = await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Window,
             title: "Preparing isolated OMP session",
           },
           () =>
-            provisionDzialkiWorktree(managementRoot, plan.role, {
+            provisionGitWorktree(managementRoot, plan.role, {
+              baseRef: isDzialki ? "origin/main" : "HEAD",
+              fetchOriginMain: isDzialki,
+              configureHooks: isDzialki,
+              bootstrap: isDzialki
+                ? bootstrapWorktree
+                : async () => undefined,
               reportPhase: (phase, elapsedMs) => {
                 this.#logger.info(
                   `OMP worktree ${phase}: ${elapsedMs} ms`,
@@ -650,7 +676,7 @@ export class SessionManager implements vscode.Disposable {
                 validatedLauncher = await detectProjectLauncher(
                   worktree.cwd,
                 );
-                if (!validatedLauncher) {
+                if (isDzialki && !validatedLauncher) {
                   throw new Error(
                     "Fresh Dzialkopedia worktree has no canonical launcher",
                   );
@@ -764,7 +790,19 @@ export class SessionManager implements vscode.Disposable {
   }
 
   #activate(session: SessionPanel): void {
+    for (const candidate of this.#sessions) {
+      candidate.setActive(candidate === session);
+    }
+    session.setActive(true);
     this.#active = session;
+    if (session.rpcHost) {
+      this.sidebar.showSession(session.id, session.rpcHost);
+    }
+    this.#refresh();
+  }
+
+  #clearActiveSession(): void {
+    this.#active = clearSessionSelection(this.#sessions);
     this.#refresh();
   }
 
@@ -780,6 +818,7 @@ export class SessionManager implements vscode.Disposable {
     this.#sessions = this.#sessions.filter((candidate) => candidate !== session);
     if (this.#active === session) {
       this.#active = this.#sessions.find((candidate) => candidate.active);
+      this.sidebar.showHome(false);
     }
     this.#refresh();
   }
@@ -848,16 +887,6 @@ export class SessionManager implements vscode.Disposable {
     );
   }
 
-  async #loadSidebarProfile(): Promise<void> {
-    const identity = await repositoryIdentity(this.#workspaceRoots()[0]);
-    if (canonicalDzialkiOrigin(identity?.origin)) {
-      this.sidebar.setProfile({
-        accessLabel: "Full access",
-        modelLabel: "Opus 5 · Extra High",
-        modelDetail: "Primary driver; GPT-5.6 Sol Extra High advises each primary turn",
-      });
-    }
-  }
 }
 
 function normalizedKey(fsPath: string): string {

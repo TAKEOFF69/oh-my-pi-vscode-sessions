@@ -45,6 +45,39 @@ function fakeMemento(): vscode.Memento {
   } as vscode.Memento;
 }
 
+test("upgrades provisional and infrastructure labels before rendering", () => {
+  const memento = fakeMementoWith({
+    "ohMyPiSessions.recentSessions.v1": [
+      {
+        ...record(1),
+        label: "This is my first omp sessions - are u alive",
+      },
+      {
+        ...record(2),
+        label: "wip/20260803-omp-session-msdinax4-9d4d16",
+        branch: "wip/20260803-omp-session-msdinax4-9d4d16",
+      },
+    ],
+  });
+  const store = new RecentSessionStore(memento);
+  assert.deepEqual(store.list().map((entry) => entry.label), [
+    "Saved OMP chat",
+    "Test OMP session",
+  ]);
+});
+
+function fakeMementoWith(initial: Record<string, unknown>): vscode.Memento {
+  const values = new Map<string, unknown>(Object.entries(initial));
+  return {
+    get: <T>(key: string, fallback?: T) =>
+      (values.has(key) ? values.get(key) : fallback) as T,
+    update: async (key: string, value: unknown) => {
+      values.set(key, value);
+    },
+    keys: () => [...values.keys()],
+  } as vscode.Memento;
+}
+
 function record(index: number): RecentSessionRecord {
   return {
     id: `session-${index}`,

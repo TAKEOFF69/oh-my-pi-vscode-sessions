@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 export function buildSidebarHtml(
   webview: vscode.Webview,
   extensionUri: vscode.Uri,
+  surfaceToken = "",
 ): string {
   const scriptUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, "dist", "sidebar-webview.js"),
@@ -17,6 +18,7 @@ export function buildSidebarHtml(
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="omp-surface-token" content="${surfaceToken}" />
   <link rel="stylesheet" href="${styleUri}" />
   <title>OMP Chats</title>
 </head>

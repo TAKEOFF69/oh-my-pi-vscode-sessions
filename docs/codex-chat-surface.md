@@ -2,13 +2,13 @@
 
 Status: approved by operator screenshot request
 Reference: Codex VS Code chat screenshots supplied in conversation on 2026-08-02 and 2026-08-03
-Scope: OMP Sessions sidebar plus structured RPC editor webview
+Scope: one OMP Sessions sidebar surface for chat list, new composer, and structured RPC drill-in
 
 ## Intent
 
 Make OMP feel visually native beside Codex from first open: recent/live chat titles at top, broad
 empty canvas, and a bottom-docked composer that creates one session from its first prompt. Preserve
-OMP RPC behavior, native editor tabs, parallel worktrees, parity checks, advisor events, tool
+OMP RPC behavior, concurrent background sessions, parallel worktrees, parity checks, advisor events, tool
 evidence, and session teardown semantics. Opening or focusing the sidebar never provisions a
 worktree or starts OMP.
 
@@ -47,8 +47,9 @@ fact. Test harness values remain fixtures only.
 
 ## Deviations
 
-- Native editor tabs remain because operator requires several concurrent sessions in one VS Code
-  window. Sidebar is launcher/directory; each live chat still owns one editor tab and one worktree.
+- Normal chats never open editor tabs. Chat list, new composer, and selected conversation replace
+  one another inside same `WebviewView`; each live chat still owns one background OMP process and
+  one worktree, and Back detaches presentation without disposing runtime.
 - Recent index stores only title, exact cwd/branch, OMP session-file pointer, kind, and timestamp.
   It never copies transcripts or scans OMP storage. A dormant row resumes only exact surviving
   worktree/session bytes after writer-lease and launcher validation; missing/stale state reports
@@ -83,5 +84,6 @@ fact. Test harness values remain fixtures only.
 
 - Changing Loop v2, worktree isolation, or leases. Model routing changes remain repository-owned and
   parity-gated outside this visual contract.
-- Replacing native editor tabs with one sidebar process.
+- Collapsing concurrent OMP runtimes into one process. Presentation is single-surface; runtime and
+  worktree ownership remain per chat.
 - Inventing filesystem checkpoints or replaying old worktrees as writable sessions.

@@ -28,6 +28,7 @@ export type RpcProcessOptions = {
   cwd: string;
   startupTimeoutMs?: number;
   requestTimeoutMs?: number;
+  emitTitleEvents?: boolean;
 };
 
 type PendingRequest = {
@@ -57,6 +58,7 @@ export class RpcProcess extends EventEmitter {
       ...options,
       startupTimeoutMs: options.startupTimeoutMs ?? 30_000,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
+      emitTitleEvents: options.emitTitleEvents ?? false,
     };
     this.#ready = this.#newReadyPromise();
   }
@@ -83,7 +85,12 @@ export class RpcProcess extends EventEmitter {
     );
     this.#child = spawn(command.file, command.args, {
       cwd: this.#options.cwd,
-      env: buildPtyEnv(),
+      env: {
+        ...buildPtyEnv(),
+        ...(this.#options.emitTitleEvents
+          ? { PI_RPC_EMIT_TITLE: "1" }
+          : {}),
+      },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       detached: process.platform !== "win32",

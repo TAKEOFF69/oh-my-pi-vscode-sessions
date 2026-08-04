@@ -32,7 +32,7 @@ export type RpcParityProfile = {
   thinkingLevel: string;
   cwd: string;
   requiredTools: readonly string[];
-  allowedTools: readonly string[];
+  allowedTools?: readonly string[];
   forbiddenTools: readonly string[];
 };
 
@@ -113,14 +113,16 @@ export function validateRpcParity(
       });
     }
   }
-  const allowedTools = new Set(profile.allowedTools);
-  for (const tool of [...tools].sort()) {
-    if (!allowedTools.has(tool)) {
-      findings.push({
-        code: "unexpected-tool",
-        expected: [...allowedTools].sort().join(", ") || "<none>",
-        actual: tool,
-      });
+  if (profile.allowedTools) {
+    const allowedTools = new Set(profile.allowedTools);
+    for (const tool of [...tools].sort()) {
+      if (!allowedTools.has(tool)) {
+        findings.push({
+          code: "unexpected-tool",
+          expected: [...allowedTools].sort().join(", ") || "<none>",
+          actual: tool,
+        });
+      }
     }
   }
   return findings;

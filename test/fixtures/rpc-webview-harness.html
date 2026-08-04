@@ -38,13 +38,25 @@
   <body>
     <div id="app"></div>
     <script>
+      window.acquireVsCodeApi = () => ({
+        postMessage(message) {
+          window.dispatchEvent(new CustomEvent("omp-sidebar-post", { detail: message }));
+          window.dispatchEvent(new CustomEvent("omp-fixture-post", { detail: message }));
+        },
+        getState() {
+          return JSON.parse(sessionStorage.getItem("omp-shared-view-state") || "null");
+        },
+        setState(state) {
+          sessionStorage.setItem("omp-shared-view-state", JSON.stringify(state));
+        }
+      });
       window.__OMP_RPC_FIXTURE__ = [
         {
           type: "bootstrap",
           cwd: "C:\\worktrees\\consumer-share",
           branch: "wip/20260727-consumer-share",
           kind: "loop",
-          advisorLabel: "GPT-5.6 Sol · xhigh",
+          advisorLabel: "Configured: GPT-5.6 Sol · Extra High",
           parityRequired: true
         },
         {

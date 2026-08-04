@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import * as nodePath from "node:path";
 import { describe, it } from "node:test";
 
-import { planAutomaticDirectory } from "../src/sessionDirectory";
+import {
+  planAutomaticDirectory,
+  provisionManagementRoot,
+} from "../src/sessionDirectory";
 import type { GitWorktree } from "../src/worktrees";
 
 const root = nodePath.resolve("C:/repo");
@@ -44,7 +47,7 @@ const worktrees: GitWorktree[] = [
 const launcherPaths = new Set([daily, loop, feature]);
 
 describe("planAutomaticDirectory", () => {
-  it("uses current folder directly for a generic project", () => {
+  it("provisions a fresh writer for a generic Git project", () => {
     assert.deepEqual(
       planAutomaticDirectory({
         workspaceRoots: [root],
@@ -54,7 +57,22 @@ describe("planAutomaticDirectory", () => {
         canonicalDzialki: false,
         launcherExists: () => false,
       }),
-      { action: "use", directory: { cwd: root, branch: "main" } },
+      { action: "create", role: "work" },
+    );
+  });
+
+  it("uses current folder directly outside Git", () => {
+    assert.deepEqual(
+      planAutomaticDirectory({
+        workspaceRoots: [root],
+        worktrees: [],
+        activeWriterCwds: [],
+        kind: "work",
+        canonicalDzialki: false,
+        gitRepository: false,
+        launcherExists: () => false,
+      }),
+      { action: "use", directory: { cwd: root } },
     );
   });
 
@@ -165,4 +183,23 @@ describe("planAutomaticDirectory", () => {
       { action: "create", role: "work" },
     );
   });
+});
+
+it("generic isolation branches from current feature worktree, not main", () => {
+  assert.equal(
+    provisionManagementRoot({
+      currentRepositoryRoot: feature,
+      worktrees,
+      canonicalDzialki: false,
+    }),
+    feature,
+  );
+  assert.equal(
+    provisionManagementRoot({
+      currentRepositoryRoot: feature,
+      worktrees,
+      canonicalDzialki: true,
+    }),
+    root,
+  );
 });

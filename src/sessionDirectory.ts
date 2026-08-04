@@ -29,6 +29,7 @@ type AutomaticDirectoryInput = {
   activeWriterCwds: readonly string[];
   kind: SessionKind;
   canonicalDzialki: boolean;
+  gitRepository?: boolean;
   launcherExists: (cwd: string) => boolean;
 };
 
@@ -54,11 +55,17 @@ export function planAutomaticDirectory(
       prunable: false,
     } satisfies GitWorktree);
 
-  if (!input.canonicalDzialki) {
+  if (input.gitRepository === false) {
     return {
       action: "use",
       directory: toDirectory(current),
     };
+  }
+
+  if (!input.canonicalDzialki) {
+    return input.kind === "work"
+      ? { action: "create", role: "work" }
+      : { action: "use", directory: toDirectory(current) };
   }
 
   const eligible = input.worktrees.filter(
@@ -125,6 +132,18 @@ export function planAutomaticDirectory(
     action: "choose",
     reason: "No trusted Dzialkopedia OMP worktree is available.",
   };
+}
+
+export function provisionManagementRoot(input: {
+  currentRepositoryRoot?: string;
+  worktrees: readonly GitWorktree[];
+  canonicalDzialki: boolean;
+}): string | undefined {
+  if (!input.canonicalDzialki) return input.currentRepositoryRoot;
+  return (
+    input.worktrees.find((worktree) => worktree.branch === "main")?.path ??
+    input.currentRepositoryRoot
+  );
 }
 
 function toDirectory(worktree: GitWorktree): SessionDirectory {

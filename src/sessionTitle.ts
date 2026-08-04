@@ -30,6 +30,13 @@ export function deriveSessionTitle(prompt: string): string {
     .split(/(?:[.!?]+\s+)|(?:\r?\n)+/)
     .map(cleanCandidate)
     .filter(Boolean);
+  const intent = candidates.join(" ").toLowerCase();
+  if (
+    /\b(?:first|test(?:ing)?)\b.*\bomp\b.*\bsessions?\b/.test(intent) ||
+    /\bomp\b.*\b(?:alive|working)\b/.test(intent)
+  ) {
+    return "Test OMP session";
+  }
   const meaningful =
     candidates.find((candidate) => !LOW_SIGNAL.has(candidate.toLowerCase())) ??
     candidates[0] ??

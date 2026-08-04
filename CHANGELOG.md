@@ -5,6 +5,22 @@ All notable changes to **Oh My Pi for VS Code** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-08-04
+
+### Changed
+
+- Chat list, prompt-first new chat, and selected conversation now occupy one Codex-style sidebar;
+  normal RPC chats no longer create editor panels.
+- Normal sessions in every project lock Claude Opus 5 Extra High as driver and GPT-5.6 Sol Extra
+  High as advisor, with model fallback disabled and runtime driver parity checked before prompting.
+- Git projects receive fresh writer worktree per normal chat; non-Git folders keep direct local use.
+
+### Fixed
+
+- Back and chat switching detach only presentation, preserving independently running OMP sessions.
+- Prompts, approvals, and aborts route exclusively to selected chat even when request IDs overlap.
+- Generic projects no longer inherit OMP's Opus 4.8/high defaults.
+
 ## [2.3.0] - 2026-08-03
 
 ### Added

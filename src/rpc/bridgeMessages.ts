@@ -2,6 +2,7 @@ const MAX_PROMPT_BYTES = 1024 * 1024;
 
 export type RpcWebviewMessage =
   | { type: "ready" }
+  | { type: "draftChanged"; draft: string }
   | { type: "prompt" | "steer" | "follow_up"; message: string }
   | { type: "abort" }
   | {
@@ -51,6 +52,11 @@ export function parseRpcWebviewMessage(
       }
       return { type: raw.type, message: raw.message };
     }
+    case "draftChanged":
+      return typeof raw.draft === "string" &&
+        Buffer.byteLength(raw.draft, "utf8") <= MAX_PROMPT_BYTES
+        ? { type: "draftChanged", draft: raw.draft }
+        : null;
     case "extensionUiResponse": {
       if (typeof raw.id !== "string" || !raw.id) {
         return null;

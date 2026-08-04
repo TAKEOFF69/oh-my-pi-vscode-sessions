@@ -40,9 +40,12 @@ type ProvisionOptions = {
     worktree: ProvisionedDzialkiWorktree,
   ) => Promise<void>;
   reportPhase?: (phase: string, elapsedMs: number) => void;
+  baseRef?: string;
+  fetchOriginMain?: boolean;
+  configureHooks?: boolean;
 };
 
-export async function provisionDzialkiWorktree(
+export async function provisionGitWorktree(
   repositoryRoot: string,
   role: DzialkiWorktreeRole,
   options: ProvisionOptions = {},
@@ -58,9 +61,14 @@ export async function provisionDzialkiWorktree(
   const stamp = options.dateStamp?.() ?? utcDateStamp();
   const arc = `${prefix}-${suffix}`;
   const branch = `wip/${stamp}-${arc}`;
+  const repositoryName = nodePath
+    .basename(repositoryRoot)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "repository";
   const cwd = nodePath.join(
     nodePath.dirname(repositoryRoot),
-    `dzialki-wt-${stamp}-${arc}`,
+    `${repositoryName}-wt-${stamp}-${arc}`,
   );
   const pathExists = options.pathExists ?? existsSync;
   if (pathExists(cwd)) {
@@ -68,6 +76,8 @@ export async function provisionDzialkiWorktree(
   }
 
   const runGit = options.runGit ?? runGitCommand;
+  const baseRef = options.baseRef ?? "origin/main";
+  const fetchOriginMain = options.fetchOriginMain ?? true;
   const runPhase = async <T>(
     phase: string,
     action: () => Promise<T>,
@@ -80,10 +90,21 @@ export async function provisionDzialkiWorktree(
     }
   };
   let created = false;
+  let bootstrapStarted = false;
+  let expectedHead = "";
   try {
-    await runPhase("fetch origin/main", () =>
-      runGit(repositoryRoot, ["fetch", "origin", "main"]),
+    if (fetchOriginMain) {
+      await runPhase("fetch origin/main", () =>
+        runGit(repositoryRoot, ["fetch", "origin", "main"]),
+      );
+    }
+    const resolvedHead = await runPhase("resolve base ref", () =>
+      runGit(repositoryRoot, ["rev-parse", baseRef]),
     );
+    expectedHead = resolvedHead.stdout.trim();
+    if (!expectedHead) {
+      throw new Error(`OMP worktree base ref does not resolve: ${baseRef}`);
+    }
     await runPhase("create worktree", () =>
       runGit(repositoryRoot, [
         "-c",
@@ -95,17 +116,16 @@ export async function provisionDzialkiWorktree(
         "-b",
         branch,
         cwd,
-        "origin/main",
+        baseRef,
       ]),
     );
     created = true;
 
-    const [actualBranch, head, canonicalHead, status] =
+    const [actualBranch, head, status] =
       await runPhase("verify worktree", () =>
         Promise.all([
           runGit(cwd, ["branch", "--show-current"]),
           runGit(cwd, ["rev-parse", "HEAD"]),
-          runGit(cwd, ["rev-parse", "origin/main"]),
           runGit(cwd, [
             "status",
             "--porcelain",
@@ -115,11 +135,11 @@ export async function provisionDzialkiWorktree(
       );
     if (
       actualBranch.stdout.trim() !== branch ||
-      head.stdout.trim() !== canonicalHead.stdout.trim() ||
+      head.stdout.trim() !== expectedHead ||
       status.stdout.trim()
     ) {
       throw new Error(
-        "Fresh OMP worktree did not match clean origin/main",
+        `Fresh OMP worktree did not match clean ${baseRef}`,
       );
     }
 
@@ -128,11 +148,17 @@ export async function provisionDzialkiWorktree(
       await options.validate?.(worktree);
     });
     await runPhase("bootstrap worktree", async () => {
-      await runGit(cwd, [
-        "config",
-        "core.hooksPath",
-        ".githooks",
-      ]);
+      bootstrapStarted = true;
+      if (
+        options.configureHooks === true &&
+        pathExists(nodePath.join(cwd, ".githooks"))
+      ) {
+        await runGit(cwd, [
+          "config",
+          "core.hooksPath",
+          ".githooks",
+        ]);
+      }
       await (options.bootstrap ?? bootstrapWorktree)(
         repositoryRoot,
         cwd,
@@ -140,12 +166,13 @@ export async function provisionDzialkiWorktree(
     });
     return worktree;
   } catch (error) {
-    if (created) {
+    if (created && !bootstrapStarted) {
       try {
         await cleanupFailedProvision(
           repositoryRoot,
           cwd,
           branch,
+          expectedHead,
           runGit,
         );
       } catch (cleanupError) {
@@ -155,9 +182,17 @@ export async function provisionDzialkiWorktree(
         );
       }
     }
+    if (created && bootstrapStarted) {
+      throw new AggregateError(
+        [error],
+        `OMP bootstrap failed; partial worktree was preserved for safe inspection: ${cwd}`,
+      );
+    }
     throw error;
   }
 }
+
+export const provisionDzialkiWorktree = provisionGitWorktree;
 
 export async function bootstrapWorktree(
   sourceRoot: string,
@@ -216,16 +251,16 @@ async function cleanupFailedProvision(
   repositoryRoot: string,
   cwd: string,
   branch: string,
+  expectedHead: string,
   runGit: (
     cwd: string,
     args: readonly string[],
   ) => Promise<CommandResult>,
 ): Promise<void> {
-  const [actualBranch, head, canonicalHead, status] =
+  const [actualBranch, head, status] =
     await Promise.all([
     runGit(cwd, ["branch", "--show-current"]),
     runGit(cwd, ["rev-parse", "HEAD"]),
-    runGit(cwd, ["rev-parse", "origin/main"]),
     runGit(cwd, [
       "status",
       "--porcelain",
@@ -233,7 +268,7 @@ async function cleanupFailedProvision(
   ]);
   if (
     actualBranch.stdout.trim() !== branch ||
-    head.stdout.trim() !== canonicalHead.stdout.trim() ||
+    head.stdout.trim() !== expectedHead ||
     status.stdout.trim()
   ) {
     throw new Error(

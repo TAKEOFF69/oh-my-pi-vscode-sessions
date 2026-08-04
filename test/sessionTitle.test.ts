@@ -31,6 +31,10 @@ test("derives concise contextual titles from first meaningful prompt", () => {
     deriveSessionTitle("Sprawdź polskie znaki i popraw nawigację sesji"),
     "Sprawdź polskie znaki i popraw nawigację sesji",
   );
+  assert.equal(
+    deriveSessionTitle("hi this is my first omp session - are u alive?"),
+    "Test OMP session",
+  );
 });
 
 test("only durable session metadata can refine automatic title", () => {
