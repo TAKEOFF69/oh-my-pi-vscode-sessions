@@ -318,6 +318,9 @@ test("canonical snapshot must cover full pinned adapter inventory", async () => 
     assert.ok(
       CANONICAL_ADAPTER_PATHS.includes("scripts/agent/start-worktree.mjs"),
     );
+    assert.ok(
+      CANONICAL_ADAPTER_PATHS.includes("scripts/omp/blackbull-codex.mjs"),
+    );
     assert.ok(CANONICAL_ADAPTER_PATHS.includes("docs/loop/bin/redact-log.py"));
   } finally {
     await rm(root, { recursive: true, force: true });

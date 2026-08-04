@@ -20,6 +20,7 @@ export type UiMessage = {
   streaming: boolean;
   isError?: boolean;
   customType?: string;
+  display?: boolean;
 };
 
 export type UiToolRun = {
@@ -98,6 +99,95 @@ export type RpcWebviewState = {
   sequence: number;
   liveMessageKey?: string;
 };
+
+/**
+ * Project the durable OMP transcript into a human chat. OMP persists every
+ * assistant/tool/advisor exchange; the chat surface keeps one answer per user
+ * turn and leaves the rest available through the activity disclosure.
+ */
+export function selectChatMessages(messages: UiMessage[]): UiMessage[] {
+  const hasVisibleUser = messages.some(
+    (message) =>
+      message.role === "user" &&
+      message.display !== false &&
+      !isSyntheticRuntimeMessage(message),
+  );
+  if (!hasVisibleUser) {
+    return messages.filter(
+      (message) =>
+        message.display !== false &&
+        message.role === "assistant" &&
+        message.content.some(
+          (block) => block.type === "text" && block.text.trim().length > 0,
+        ),
+    );
+  }
+  const visible: UiMessage[] = [];
+  let turn: UiMessage[] = [];
+  let suppressTurn = false;
+
+  const flushTurn = (): void => {
+    if (turn.length === 0) return;
+    if (suppressTurn) {
+      turn = [];
+      suppressTurn = false;
+      return;
+    }
+    const answer = [...turn]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === "assistant" &&
+          message.display !== false &&
+          message.content.some(
+            (block) =>
+              (block.type === "text" && block.text.trim().length > 0) ||
+              block.type === "image",
+          ),
+      );
+    if (answer) visible.push(answer);
+    for (const message of turn) {
+      if (message.isError && message !== answer) visible.push(message);
+    }
+    turn = [];
+  };
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      flushTurn();
+      if (message.display === false || isSyntheticRuntimeMessage(message)) {
+        turn.push(message);
+        suppressTurn = true;
+        continue;
+      }
+      visible.push(message);
+      continue;
+    }
+    turn.push(message);
+  }
+  flushTurn();
+  return visible;
+}
+
+export function countFoldedActivity(
+  messages: UiMessage[],
+  visibleMessages: UiMessage[],
+  tools: UiToolRun[],
+  subagents: UiSubagent[],
+): number {
+  const visibleKeys = new Set(visibleMessages.map((message) => message.key));
+  const hiddenMessages = messages.filter(
+    (message) =>
+      !visibleKeys.has(message.key) &&
+      (message.role === "advisory" ||
+        message.role === "developer" ||
+        message.role === "custom" ||
+        message.content.some(
+          (block) => block.type === "thinking" || block.type === "toolCall",
+        )),
+  ).length;
+  return tools.length + subagents.length + hiddenMessages;
+}
 
 export function createInitialWebviewState(
   runtime: Partial<UiRuntimeState> = {},
@@ -342,6 +432,13 @@ function reduceResponse(
   frame: Record<string, unknown>,
 ): RpcWebviewState {
   if (frame.success !== true) {
+    if (
+      (frame.command === "get_messages" ||
+        frame.command === "get_messages_page") &&
+      frame.code === "session_busy"
+    ) {
+      return state;
+    }
     addNotice(
       state,
       "error",
@@ -405,6 +502,21 @@ function reduceResponse(
     state.commands = normalizeCommands(frame.data.commands);
   }
   return state;
+}
+
+function isSyntheticRuntimeMessage(message: UiMessage): boolean {
+  const text = message.content
+    .filter((block): block is Extract<UiContentBlock, { type: "text" }> =>
+      block.type === "text",
+    )
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+  return (
+    /^###\s+Session update\b/i.test(text) ||
+    /^<task-notification\b/i.test(text) ||
+    /^<advisory\b/i.test(text)
+  );
 }
 
 function displaySessionName(
@@ -487,6 +599,7 @@ function normalizeMessage(
     streaming,
     isError: message.isError === true,
     customType: customType || undefined,
+    display: typeof message.display === "boolean" ? message.display : undefined,
   };
 }
 

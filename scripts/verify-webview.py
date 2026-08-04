@@ -40,20 +40,49 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     if empty:
         page.locator(".empty-mark").wait_for()
         assert page.locator(".message").count() == 0
+        dispatch_frame(
+            page,
+            {
+                "type": "rpc",
+                "frame": {
+                    "type": "extension_ui_request",
+                    "method": "setStatus",
+                    "statusKey": "status-only-proof",
+                    "statusText": "ready",
+                },
+            },
+        )
+        page.locator(".activity").wait_for()
+        assert page.get_by_text("status-only-proof", exact=True).is_hidden()
+        dispatch_frame(
+            page,
+            {
+                "type": "rpc",
+                "frame": {
+                    "type": "extension_ui_request",
+                    "method": "setStatus",
+                    "statusKey": "status-only-proof",
+                    "statusText": "",
+                },
+            },
+        )
+        page.locator(".empty-mark").wait_for()
     else:
-        page.locator(".message.advisory").wait_for()
-        page.locator(".tool-card.complete").wait_for()
-        assert page.get_by_text("Opus 5", exact=False).is_visible()
-        assert page.get_by_text("loop_dispatch_plan", exact=True).is_visible()
-        assert page.get_by_text("Stage scope is valid", exact=False).is_visible()
+        page.get_by_text("Stage is valid and dispatch is armed.", exact=True).wait_for()
+        page.locator(".activity").wait_for()
+        assert "Opus 5" in page.locator("#model-label").inner_text()
+        assert page.locator(".message.assistant").count() == 1
+        assert page.locator(".message.advisory").count() == 0
+        assert page.locator(".message-meta").count() == 0
+        assert page.get_by_text("Stage scope is valid", exact=False).count() == 0
+        assert page.get_by_text("loop_dispatch_plan", exact=True).is_hidden()
+        assert page.get_by_text("Dzialkopedia project policy loaded", exact=True).is_hidden()
+        assert page.get_by_text("dzialki-model-lock", exact=True).is_hidden()
 
         page.locator("#actions-button").click()
         assert page.get_by_text("Show OMP logs", exact=True).is_visible()
         page.keyboard.press("Escape")
         assert page.locator("#actions-menu").is_hidden()
-
-        page.locator("[data-tool-toggle='tool-verify']").click()
-        assert page.locator("[data-tool-details='tool-verify']").is_visible()
 
     overflow = page.evaluate(
         "() => document.documentElement.scrollWidth - "
@@ -69,6 +98,15 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
 
     screenshot = OUTPUT / f"rpc-webview-{name}.png"
     page.screenshot(path=str(screenshot), full_page=True)
+
+    if not empty:
+        page.locator(".activity > summary").click()
+        page.locator(".tool-card.complete").wait_for()
+        assert page.get_by_text("loop_dispatch_plan", exact=True).is_visible()
+        assert page.get_by_text("Dzialkopedia project policy loaded", exact=True).is_visible()
+        assert page.get_by_text("dzialki-model-lock", exact=True).is_visible()
+        page.locator("[data-tool-toggle='tool-verify']").click()
+        assert page.locator("[data-tool-details='tool-verify']").is_visible()
 
     page.evaluate(
         """() => {

@@ -15,8 +15,10 @@ type WindowWithFind = Window & {
 };
 import {
   applyHostFrame,
+  countFoldedActivity,
   createInitialWebviewState,
   reduceRpcFrame,
+  selectChatMessages,
   type RpcWebviewState,
   type UiContentBlock,
   type UiMessage,
@@ -72,6 +74,7 @@ let renderedRequestId: string | undefined;
 const renderedMessages = new Map<string, UiMessage>();
 const renderedSlotMarkup = new Map<string, string>();
 const expandedToolIds = new Set<string>();
+let activityExpanded = false;
 
 const root = requireElement("app");
 root.innerHTML = `
@@ -178,6 +181,16 @@ stream.addEventListener("scroll", () => {
     stream.scrollHeight - stream.scrollTop - stream.clientHeight;
   userPinnedScroll = remaining > 90;
 });
+stream.addEventListener(
+  "toggle",
+  (event) => {
+    const details = event.target;
+    if (details instanceof HTMLDetailsElement && details.classList.contains("activity")) {
+      activityExpanded = details.open;
+    }
+  },
+  true,
+);
 composer.addEventListener("input", () => {
   vscode.setState({ draft: composer.value });
   post({ type: "draftChanged", draft: composer.value });
@@ -455,6 +468,24 @@ function renderRail(): void {
 
 function renderTimeline(): void {
   const shouldFollow = !userPinnedScroll;
+  const chatMessages = selectChatMessages(state.messages);
+  const activityCount = countFoldedActivity(
+    state.messages,
+    chatMessages,
+    state.tools,
+    state.subagents,
+  );
+  const visibleNotices = state.notices.filter(
+    (notice) => notice.level === "error",
+  );
+  const foldedNotices = state.notices.filter(
+    (notice) => notice.level !== "error",
+  );
+  const totalActivityCount =
+    activityCount +
+    foldedNotices.length +
+    Object.keys(state.statuses).length +
+    Object.keys(state.widgets).length;
   const parityBanner =
     state.runtime.parity === "failed"
       ? `
@@ -465,9 +496,9 @@ function renderTimeline(): void {
     `
       : "";
   const empty =
-    state.messages.length === 0 &&
-    state.tools.length === 0 &&
-    state.notices.length === 0;
+    chatMessages.length === 0 &&
+    totalActivityCount === 0 &&
+    visibleNotices.length === 0;
   const nextSignature = empty
     ? `empty:${parityBanner}:${state.runtime.kind ?? ""}`
     : `content:${parityBanner}`;
@@ -476,11 +507,9 @@ function renderTimeline(): void {
       ? `${parityBanner}${renderEmpty()}`
       : `${parityBanner}
         <div class="timeline">
-          <div class="timeline-slot" data-timeline-slot="extensions"></div>
           <div class="timeline-slot" data-timeline-slot="notices"></div>
           <div class="timeline-slot messages" data-timeline-slot="messages"></div>
-          <div class="timeline-slot" data-timeline-slot="tools"></div>
-          <div class="timeline-slot" data-timeline-slot="agents"></div>
+          <div class="timeline-slot" data-timeline-slot="activity"></div>
         </div>`;
     timelineSignature = nextSignature;
     renderedMessages.clear();
@@ -488,28 +517,15 @@ function renderTimeline(): void {
   }
   if (!empty) {
     updateTimelineSlot(
-      "extensions",
-      Object.keys(state.statuses).length > 0 ||
-        Object.keys(state.widgets).length > 0
-        ? renderExtensionSurfaces()
-        : "",
-    );
-    updateTimelineSlot(
       "notices",
-      state.notices.length > 0 ? renderNotices() : "",
+      visibleNotices.length > 0 ? renderNotices(visibleNotices) : "",
     );
-    updateMessageSlot(
-      state.messages.filter(
-        (message) => message.role !== "toolResult" || message.isError,
-      ),
-    );
+    updateMessageSlot(chatMessages);
     updateTimelineSlot(
-      "tools",
-      state.tools.length > 0 ? renderTools(state.tools.slice(-12)) : "",
-    );
-    updateTimelineSlot(
-      "agents",
-      state.subagents.length > 0 ? renderAgents() : "",
+      "activity",
+      totalActivityCount > 0
+        ? renderActivity(totalActivityCount, foldedNotices)
+        : "",
     );
   }
   if (shouldFollow) {
@@ -624,37 +640,43 @@ function renderMessage(message: UiMessage): string {
   if (message.role === "toolResult" && !message.isError) {
     return "";
   }
-  const label = {
-    user: "You",
-    assistant: "Assistant",
-    developer: "Runtime",
-    toolResult: "Tool",
-    advisory: "Advisor",
-    custom: message.customType || "OMP",
-  }[message.role];
-  const content = message.content.map(renderContent).join("");
-  const modelMeta =
-    message.model ||
-    (message.role === "advisory" ? state.runtime.advisorLabel : undefined);
-  const showMeta =
-    message.role !== "user" &&
-    (message.role !== "assistant" || Boolean(modelMeta) || message.streaming);
+  const content = message.content
+    .filter((block) => block.type === "text" || block.type === "image")
+    .map(renderContent)
+    .join("");
   return `
     <article class="message ${message.role}" data-message-key="${escapeAttr(message.key)}">
       <div class="message-body">
-        ${
-          showMeta
-            ? `<div class="message-meta"><strong>${escapeHtml(label)}</strong>${
-                modelMeta ? `<span>${escapeHtml(modelMeta)}</span>` : ""
-              }${message.streaming ? "<span>working</span>" : ""}</div>`
-            : ""
-        }
         <div class="content">
           ${content}
           ${message.streaming ? '<span class="streaming-caret" aria-label="Streaming"></span>' : ""}
         </div>
       </div>
     </article>
+  `;
+}
+
+function renderActivity(
+  count: number,
+  foldedNotices: typeof state.notices,
+): string {
+  const failed = state.tools.filter((tool) => tool.status === "failed").length;
+  const running = state.tools.filter((tool) => tool.status === "running").length;
+  const summary = failed > 0
+    ? `Activity · ${failed} failed`
+    : running > 0 || state.runtime.isStreaming
+      ? `Working · ${count} step${count === 1 ? "" : "s"}`
+      : `Activity · ${count} step${count === 1 ? "" : "s"}`;
+  return `
+    <details class="activity"${failed > 0 || activityExpanded ? " open" : ""}>
+      <summary>${escapeHtml(summary)}</summary>
+      <div class="activity-body">
+        ${Object.keys(state.statuses).length > 0 || Object.keys(state.widgets).length > 0 ? renderExtensionSurfaces() : ""}
+        ${foldedNotices.length > 0 ? renderNotices(foldedNotices) : ""}
+        ${state.tools.length > 0 ? renderTools(state.tools) : ""}
+        ${state.subagents.length > 0 ? renderAgents() : ""}
+      </div>
+    </details>
   `;
 }
 
@@ -729,11 +751,10 @@ function renderTool(tool: UiToolRun): string {
   `;
 }
 
-function renderNotices(): string {
+function renderNotices(notices: typeof state.notices): string {
   return `
     <section class="notice-stack" aria-label="OMP notices">
-      ${state.notices
-        .slice(-8)
+      ${notices
         .map(
           (notice) => `
             <article class="notice ${notice.level}">
@@ -752,7 +773,7 @@ function renderNotices(): string {
 
 function renderAgents(): string {
   return `
-    <details class="agents" open>
+    <details class="agents">
       <summary>${state.subagents.length} active/recent OMP subagent${state.subagents.length === 1 ? "" : "s"}</summary>
       <div class="agent-grid">
         ${state.subagents

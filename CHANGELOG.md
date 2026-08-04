@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI can run manually and verifies RPC parity plus native package creation on Windows, macOS,
   and Linux.
 
+## [2.5.0] - 2026-08-05
+
+### Changed
+
+- Conversation view now presents one final answer per user turn and folds reasoning, advisor,
+  successful tool activity, runtime metadata, and subagent progress into one closed activity row.
+- Dzialkopedia canonical adapter inventory includes first-class BlackBull Luna/max transport.
+
+### Fixed
+
+- Hidden and synthetic runtime messages no longer replace user-visible answers.
+- Transient history paging `session_busy` responses no longer appear as chat errors.
+- Repeated Assistant/model headers and duplicated inline tool-call cards are removed from the
+  default reading flow; failed tools, parity failures, and operator requests remain visible.
+
 ## [2.4.0] - 2026-08-04
 
 ### Changed

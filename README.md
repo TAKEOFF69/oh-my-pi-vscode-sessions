@@ -36,7 +36,7 @@ Generic OMP sessions do not require Dzialkopedia or another private repository. 
 RPC transport, single-sidebar presentation, session lifecycle, process reaping, writer leases, and
 editor context. Unverified generic sessions are labelled `Custom access`.
 
-Version 2.4.0 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
+Version 2.5.0 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
 Git origin and is fail-closed. Adapter source exposes repository identity, control-file names, and
 protocol identifiers, but contains no credentials. This is currently runtime separation, not yet
 separate packaging; see [project-policy boundary](docs/project-policy-boundary.md).
@@ -46,7 +46,8 @@ separate packaging; see [project-policy boundary](docs/project-policy-boundary.m
 1. Open **OMP Sessions** from the activity bar.
 2. Type into the bottom composer and send. The prompt creates one isolated session.
 3. Same sidebar becomes selected conversation; Back returns to chat list without stopping that
-   session. Advisor, tool, retry, compaction, and subagent events render directly.
+   session. Final answers remain in transcript; advisor, tool, reasoning, runtime, and subagent
+   activity folds into one closed activity row unless it is an error or operator decision.
 4. If conversation calls for Loop v2, OMP requests an isolated controller chat
    automatically through `loop_handoff`.
 5. Repeat. Chats run concurrently in background processes and switch through same sidebar.
@@ -73,6 +74,12 @@ direct Loop lifecycle or dispatch tools. Once user and Opus decide Loop is right
 tool opens dedicated controller worktree, starts locked RPC profile, validates exact
 runtime parity, then sends `/loop-start <alias>`. Mismatched model, effort, cwd, or
 tool surface blocks before controller starts.
+
+Dzialkopedia daily sessions also expose repository-owned `blackbull_codex`: Opus can send one
+bounded audit or implementation task to BlackBull Luna/max. Transport clones an approved canonical
+remote, then worker execution is network-disabled. Exact reachable current commit is checked out;
+result returns as report plus reviewable local patch and never auto-applies.
+Loop workers continue through canonical Loop dispatch only.
 
 The rule is **one writing session per worktree**, not one VS Code window per
 worktree. Atomic leases under shared Git directory enforce this across chats,
@@ -132,12 +139,11 @@ fallback.
 
 OMP remains the runtime and authority. The extension does not replace its model
 routing, advisor, skills, tools, session storage, or Loop controller. It negotiates
-RPC protocol v2 and renders:
+RPC protocol v2 and preserves:
 
-- streaming messages and thinking;
-- live tool calls and results;
-- advisor interventions;
-- retries, compaction, TTSR, todos, and subagent progress;
+- streaming user messages and final answers in default transcript;
+- one collapsed activity disclosure for thinking, successful tools/results, advisor interventions,
+  retries, compaction, TTSR, todos, and subagent progress;
 - slash-command discovery;
 - send, steer, follow-up, and abort;
 - OMP extension confirmations, selections, and editor input;
@@ -201,7 +207,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.4.0.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.5.0.vsix --force
 ```
 
 ## Current boundary

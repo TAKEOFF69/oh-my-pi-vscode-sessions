@@ -485,6 +485,27 @@ button {
   gap: 3px;
 }
 
+.activity {
+  margin-top: -8px;
+  color: var(--omp-muted);
+  font-size: 10px;
+}
+
+.activity > summary {
+  width: fit-content;
+  padding: 3px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.activity-body {
+  display: grid;
+  gap: 7px;
+  margin-top: 6px;
+  padding-left: 9px;
+  border-left: 1px solid var(--omp-line);
+}
+
 .tool-card {
   overflow: hidden;
   border: 0;

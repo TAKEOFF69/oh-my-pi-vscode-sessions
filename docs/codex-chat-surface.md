@@ -23,8 +23,8 @@ worktree or starts OMP.
 | Pane background | Flat VS Code dark surface, no decorative grid | Remove grid and card backdrop from `.app` | shared-identical |
 | Top chrome | Small `Chats` label with quiet icon actions and one divider | Compact session header with Sessions, New Session, Search, Logs, Settings | shared-with-functional-overrides |
 | Empty canvas | Large negative space with one muted centered mark | Muted OMP orbit/pi mark; no marketing card or shortcut copy | shared-identical |
-| Conversation | Text-first, narrow readable column, little permanent chrome | Remove avatar column and persistent role labels; retain subtle user/advisor distinctions | shared-with-functional-overrides |
-| Tool activity | Compact action rows; detail only on demand | One-line tool header with expandable result | shared-identical |
+| Conversation | Text-first, narrow readable column, little permanent chrome | Remove avatar/model repetition; keep one final assistant answer per user turn | shared-with-functional-overrides |
+| Tool activity | Compact action rows; detail only on demand | One closed activity disclosure with expandable result | shared-identical |
 | Composer | Rounded bordered field docked near bottom | Rounded composer with message field and bottom control row | shared-identical |
 | Composer left controls | Plus action and access state | Plus menu for logs/diagnostic terminal/find; exact Dzialki policy label or honest generic `Custom access` | shared-with-functional-overrides |
 | Composer right controls | Model label and circular send/stop button | Live OMP model/effort label and circular send/stop control | shared-identical |
@@ -54,8 +54,8 @@ fact. Test harness values remain fixtures only.
   It never copies transcripts or scans OMP storage. A dormant row resumes only exact surviving
   worktree/session bytes after writer-lease and launcher validation; missing/stale state reports
   unavailable and never creates a replacement worktree silently.
-- OMP advisor, parity, compaction, task, and tool evidence remains renderable. It is visually
-  demoted, not removed or fabricated.
+- OMP advisor, compaction, task, and tool evidence remains in authoritative session history and is
+  folded behind activity. Errors, parity blocks, and operator requests remain prominent.
 
 ## Acceptance evidence
 
