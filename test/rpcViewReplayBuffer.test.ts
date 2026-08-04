@@ -3,7 +3,13 @@ import test from "node:test";
 
 import { RpcViewReplayBuffer } from "../src/rpc/RpcViewReplayBuffer";
 
-type Frame = { type: string; id?: string; method?: string; value?: string };
+type Frame = {
+  type: string;
+  id?: string;
+  method?: string;
+  targetId?: string;
+  value?: string;
+};
 
 test("rehydration discards pre-history frames and preserves racing live frames", () => {
   const replay = new RpcViewReplayBuffer<Frame>();
@@ -34,5 +40,21 @@ test("only unresolved interactive UI requests survive detach and reattach", () =
     "confirm",
   ]);
   replay.resolveUiRequest("confirm");
+  assert.deepEqual(replay.pendingUiRequests(), []);
+});
+
+test("runtime cancellation removes a detached interactive request", () => {
+  const replay = new RpcViewReplayBuffer<Frame>();
+  replay.observeUiRequest({
+    type: "extension_ui_request",
+    id: "editor-1",
+    method: "editor",
+  });
+  replay.observeUiRequest({
+    type: "extension_ui_request",
+    id: "cancel-1",
+    method: "cancel",
+    targetId: "editor-1",
+  });
   assert.deepEqual(replay.pendingUiRequests(), []);
 });

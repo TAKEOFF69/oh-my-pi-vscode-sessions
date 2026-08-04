@@ -52,6 +52,33 @@ test("webview reducer keeps generic runtime parity explicitly untrusted", () => 
   assert.equal(state.runtime.parity, "passed");
 });
 
+test("webview reducer never replaces a smart title with worktree infrastructure", () => {
+  let state = createInitialWebviewState();
+  state = applyHostFrame(state, {
+    type: "bootstrap",
+    cwd: "C:\\work\\omp-session-abc123",
+    branch: "wip/20260804-omp-session-abc123",
+    sessionName: "Test OMP session",
+  });
+  state = reduceRpcFrame(state, {
+    type: "session_info_update",
+    title: "wip/20260804-omp-session-abc123",
+  });
+  state = reduceRpcFrame(state, {
+    type: "response",
+    command: "get_state",
+    success: true,
+    data: { sessionName: "C:\\work\\omp-session-abc123" },
+  });
+  assert.equal(state.runtime.sessionName, "Test OMP session");
+
+  state = reduceRpcFrame(state, {
+    type: "session_info_update",
+    title: "Research OMP runtime parity",
+  });
+  assert.equal(state.runtime.sessionName, "Research OMP runtime parity");
+});
+
 test("webview reducer streams messages and tool execution", () => {
   let state = createInitialWebviewState();
   state = reduceRpcFrame(state, {

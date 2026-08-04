@@ -241,8 +241,10 @@ export function reduceRpcFrame(
         stringValue(frame.thinkingLevel) || next.runtime.thinkingLevel;
       return next;
     case "session_info_update":
-      next.runtime.sessionName =
-        stringValue(frame.title) || next.runtime.sessionName;
+      next.runtime.sessionName = displaySessionName(
+        frame.title,
+        next.runtime,
+      ) || next.runtime.sessionName;
       next.runtime.sessionId =
         stringValue(frame.sessionId) || next.runtime.sessionId;
       return next;
@@ -293,8 +295,10 @@ export function applyHostFrame(
     case "bootstrap":
       next.runtime.cwd = stringValue(raw.cwd);
       next.runtime.branch = stringValue(raw.branch);
-      next.runtime.sessionName =
-        stringValue(raw.sessionName) || next.runtime.sessionName;
+      next.runtime.sessionName = displaySessionName(
+        raw.sessionName,
+        next.runtime,
+      ) || next.runtime.sessionName;
       next.runtime.kind = stringValue(raw.kind);
       next.runtime.advisorLabel = stringValue(raw.advisorLabel);
       next.runtime.parityRequired = raw.parityRequired !== false;
@@ -363,8 +367,10 @@ function reduceResponse(
     state.runtime.isStreaming = data.isStreaming === true;
     state.runtime.isCompacting = data.isCompacting === true;
     state.runtime.queuedMessageCount = numberValue(data.queuedMessageCount);
-    state.runtime.sessionName =
-      stringValue(data.sessionName) || state.runtime.sessionName;
+    state.runtime.sessionName = displaySessionName(
+      data.sessionName,
+      state.runtime,
+    ) || state.runtime.sessionName;
     state.runtime.sessionId = stringValue(data.sessionId);
     state.runtime.sessionFile = stringValue(data.sessionFile);
     state.runtime.contextUsage = isRecord(data.contextUsage)
@@ -399,6 +405,33 @@ function reduceResponse(
     state.commands = normalizeCommands(frame.data.commands);
   }
   return state;
+}
+
+function displaySessionName(
+  raw: unknown,
+  runtime: Pick<UiRuntimeState, "branch" | "cwd">,
+): string {
+  const value = stringValue(raw).replace(/\s+/g, " ").trim();
+  if (!value) return "";
+  const normalized = value.replaceAll("\\", "/").toLowerCase();
+  const branch = runtime.branch?.replaceAll("\\", "/").toLowerCase();
+  const cwd = runtime.cwd
+    ?.replaceAll("\\", "/")
+    .replace(/\/$/, "")
+    .toLowerCase();
+  const cwdBase = cwd?.split("/").pop();
+  if (
+    normalized === branch ||
+    normalized === cwd ||
+    normalized === cwdBase ||
+    /^(?:wip|feature|fix|chore|refactor|release)\//.test(normalized) ||
+    /^(?:[a-z]:\/|\/)/.test(normalized) ||
+    /^[a-f0-9]{32,64}$/.test(normalized) ||
+    /omp-(?:loop-)?session-[a-z0-9-]{6,}/.test(normalized)
+  ) {
+    return "";
+  }
+  return value;
 }
 
 function reduceMessage(

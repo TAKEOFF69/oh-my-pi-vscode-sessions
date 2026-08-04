@@ -411,12 +411,12 @@ function render(): void {
 
 function renderRail(): void {
   requireElement("session-name").textContent =
-    state.runtime.sessionName ||
-    state.runtime.branch ||
-    "OMP session";
+    state.runtime.sessionName || "New chat";
   const sessionPath = requireElement("session-path");
-  sessionPath.textContent = state.runtime.branch || "Current workspace";
-  sessionPath.title = state.runtime.cwd ?? "";
+  sessionPath.textContent = "";
+  sessionPath.title = state.runtime.cwd
+    ? `Working directory: ${state.runtime.cwd}`
+    : "Current workspace";
 
   const model = state.runtime.model?.id || "Model pending";
   const modelDisplay = formatModelLabel(model);

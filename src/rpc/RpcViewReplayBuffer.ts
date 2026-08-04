@@ -2,6 +2,7 @@ export type ReplayableRpcFrame = {
   type: string;
   id?: unknown;
   method?: unknown;
+  targetId?: unknown;
 };
 
 export class RpcViewReplayBuffer<TFrame extends ReplayableRpcFrame> {
@@ -43,9 +44,15 @@ export class RpcViewReplayBuffer<TFrame extends ReplayableRpcFrame> {
   }
 
   observeUiRequest(frame: TFrame): void {
-    if (frame.type !== "extension_ui_request" || !isInteractive(frame.method)) {
+    if (frame.type !== "extension_ui_request") {
       return;
     }
+    if (frame.method === "cancel") {
+      const targetId = typeof frame.targetId === "string" ? frame.targetId : "";
+      if (targetId) this.#pendingRequests.delete(targetId);
+      return;
+    }
+    if (!isInteractive(frame.method)) return;
     const id = typeof frame.id === "string" ? frame.id : "";
     if (id) this.#pendingRequests.set(id, frame);
   }

@@ -15,6 +15,7 @@ import {
   type RpcParityProfile,
   type RpcSessionState,
   validateRpcParity,
+  validateRpcRuntimeConfigFrame,
 } from "./parity";
 import { InitialPromptOwnership } from "./initialPromptOwnership";
 import { classifyPreParityFrame } from "./preParity";
@@ -529,10 +530,21 @@ export class RpcSessionHost implements SessionHost {
         );
       }
       void this.#post({ type: "parity", ok: true });
-      this.#flushPreParityFrames();
-      return true;
+      return this.#flushPreParityFrames();
     }
-    const detail = formatRpcParityFindings(findings);
+    return this.#blockParity(formatRpcParityFindings(findings));
+  }
+
+  #validateRuntimeConfig(frame: RpcFrame): boolean {
+    if (!this.#parity) return true;
+    const findings = validateRpcRuntimeConfigFrame(frame, this.#parity);
+    if (findings.length === 0) return true;
+    return this.#blockParity(
+      `Runtime model lock changed after startup.\n${formatRpcParityFindings(findings)}`,
+    );
+  }
+
+  #blockParity(detail: string): false {
     this.#parityFailed = true;
     this.#parityPassed = false;
     this.#logger.error(`RPC parity blocked "${this.#label}": ${detail}`);
@@ -540,6 +552,13 @@ export class RpcSessionHost implements SessionHost {
     void this.#post({ type: "parity", ok: false, detail });
     this.#preParityFrames = [];
     this.#preParityBytes = 0;
+    const drafts = this.#promptLifecycle.drain();
+    if (drafts.length > 0) {
+      void this.#post({
+        type: "restoreDraft",
+        text: drafts.join("\n\n"),
+      });
+    }
     const rpc = this.#rpc;
     this.#rpc = undefined;
     if (rpc) {
@@ -590,20 +609,25 @@ export class RpcSessionHost implements SessionHost {
       }
       return;
     }
+    if (!this.#validateRuntimeConfig(frame)) return;
     this.#observeRpcFrame(frame);
     this.#handleRpcFrame(frame);
     this.#deliverRpcFrame(frame);
   }
 
-  #flushPreParityFrames(): void {
+  #flushPreParityFrames(): boolean {
     const buffered = this.#preParityFrames;
     this.#preParityFrames = [];
     this.#preParityBytes = 0;
     for (const frame of buffered) {
+      // Startup set_model/set_thinking_level responses are intentionally
+      // buffered and may omit the resulting state in OMP 17.1.3. The full
+      // get_state snapshot was validated immediately before this flush.
       this.#observeRpcFrame(frame);
       this.#handleRpcFrame(frame);
       this.#deliverRpcFrame(frame);
     }
+    return true;
   }
 
   #rejectPreParityUiRequest(frame: RpcFrame): void {

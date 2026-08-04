@@ -14,6 +14,8 @@ Every normal extension session is role-locked before prompts are accepted:
 
 - driver: `anthropic/claude-opus-5`, thinking `xhigh`;
 - advisor: `openai-codex/gpt-5.6-sol:xhigh`, enabled;
+- post-start model/config responses and change events must preserve driver provider, model, and
+  effort or terminate the runtime as a parity failure;
 - task/smol roles: `openai-codex/gpt-5.6-luna:max`;
 - retry model fallback: disabled.
 
@@ -22,7 +24,7 @@ Every normal extension session is role-locked before prompts are accepted:
 | Reference element | Required OMP behavior | Verification |
 | --- | --- | --- |
 | One `Chats` sidebar | Home and conversation occupy same `WebviewView` | source guard rejects normal `createWebviewPanel` |
-| Recent-chat rows | Friendly context title, status, age; no worktree as title | browser fixture + title unit tests |
+| Recent-chat rows and conversation header | Friendly context title, status, age; no visible worktree identity | browser fixture + title unit tests |
 | Home composer at bottom | First prompt creates exactly one session | browser fixture + creation-gate tests |
 | Row click | Drills into conversation in same sidebar | provider/router source and lifecycle tests |
 | Conversation back action | Returns to same recent list without stopping runtime | router and active-selection tests |

@@ -8,6 +8,7 @@ import {
   type RpcParityProfile,
   type RpcSessionState,
   validateRpcParity,
+  validateRpcRuntimeConfigFrame,
 } from "../src/rpc/parity";
 
 type Fixture = {
@@ -50,6 +51,68 @@ test("RPC parity rejects tools outside exact allowed inventory", () => {
       .filter((finding) => finding.code === "unexpected-tool")
       .map((finding) => finding.actual),
     ["surprise_tool"],
+  );
+});
+
+test("runtime config updates preserve the exact driver lock", () => {
+  const fixture = readFixture("rpc-parity.good.json");
+  assert.deepEqual(validateRpcRuntimeConfigFrame({
+    type: "config_update",
+    model: fixture.state.model,
+    thinkingLevel: fixture.state.thinkingLevel,
+  }, fixture.profile), []);
+
+  const findings = validateRpcRuntimeConfigFrame({
+    type: "config_update",
+    model: { provider: "anthropic", id: "claude-opus-4-8" },
+    thinkingLevel: "high",
+  }, fixture.profile);
+  assert.deepEqual(
+    findings.map((finding) => finding.code),
+    ["model-id", "thinking-level"],
+  );
+});
+
+test("runtime lock covers OMP 17.1.3 model and thinking mutation frames", () => {
+  const fixture = readFixture("rpc-parity.good.json");
+  const modelFindings = validateRpcRuntimeConfigFrame({
+    type: "response",
+    command: "cycle_model",
+    success: true,
+    data: {
+      model: { provider: "openai-codex", id: "gpt-5.3-codex-spark" },
+      thinkingLevel: "xhigh",
+    },
+  }, fixture.profile);
+  assert.deepEqual(
+    modelFindings.map((finding) => finding.code),
+    ["model-provider", "model-id"],
+  );
+
+  const effortFindings = validateRpcRuntimeConfigFrame({
+    type: "thinking_level_changed",
+    thinkingLevel: "high",
+  }, fixture.profile);
+  assert.deepEqual(
+    effortFindings.map((finding) => finding.code),
+    ["thinking-level"],
+  );
+
+  assert.deepEqual(validateRpcRuntimeConfigFrame({
+    type: "response",
+    command: "set_thinking_level",
+    success: true,
+    data: {},
+  }, fixture.profile), []);
+
+  assert.deepEqual(
+    validateRpcRuntimeConfigFrame({
+      type: "response",
+      command: "set_model",
+      success: true,
+      data: {},
+    }, fixture.profile).map((finding) => finding.code),
+    ["model-provider", "model-id"],
   );
 });
 

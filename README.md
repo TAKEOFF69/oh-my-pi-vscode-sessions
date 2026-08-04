@@ -64,7 +64,9 @@ project access/model/effort state. Concurrent runtime ownership remains one OMP 
 writer worktree per chat; switching presentation does not stop or merge those runtimes.
 
 Normal extension sessions lock Claude Opus 5 at Extra High as driver and GPT-5.6 Sol at Extra High
-as advisor, with model fallback disabled. OMP OAuth credentials remain in OMP's own auth storage.
+as advisor, with model fallback disabled. Launch parity is durable: a later OMP model or thinking-level
+change fails the session closed instead of silently drifting. OMP OAuth credentials remain in OMP's own
+auth storage.
 
 For Dzialkopedia, standard session exposes narrow `loop_handoff` tool but never
 direct Loop lifecycle or dispatch tools. Once user and Opus decide Loop is right,

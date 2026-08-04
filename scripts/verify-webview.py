@@ -84,11 +84,14 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
             "type": "bootstrap",
             "cwd": "C:\\worktrees\\startup-proof",
             "branch": "wip/startup-proof",
+            "sessionName": "Verify OMP startup",
             "kind": "work",
             "parityRequired": True,
         },
     )
     dispatch_frame(page, {"type": "transport", "status": "starting"})
+    assert page.locator("#session-name").inner_text() == "Verify OMP startup"
+    assert page.get_by_text("wip/startup-proof", exact=True).count() == 0
     page.locator("#composer-input").fill("send button regression proof")
     assert page.locator("#send-button").is_disabled(), (
         f"{name} send button enabled before runtime readiness"
