@@ -15,6 +15,10 @@ const sessionPanelSource = readFileSync(
   "src/sessions/SessionPanel.ts",
   "utf8",
 );
+const sidebarProviderSource = readFileSync(
+  "src/sidebar/SessionSidebarProvider.ts",
+  "utf8",
+);
 const roleConfig = readFileSync("config/driver.yml", "utf8");
 
 test("sidebar exposes one primary New Session path", () => {
@@ -51,6 +55,11 @@ test("sidebar exposes one primary New Session path", () => {
     sessionPanelSource,
     /if \(spec\.transport === "rpc"\)[\s\S]{0,1200}createWebviewPanel/,
   );
+  assert.match(
+    sidebarProviderSource,
+    /workbench\.view\.extension\.oh-my-pi-sessions/,
+  );
+  assert.doesNotMatch(sidebarProviderSource, /ohMyPiSessions\.sessions\.focus/);
   assert.equal(
     manifest.contributes.keybindings.find(
       (entry: { command: string }) =>

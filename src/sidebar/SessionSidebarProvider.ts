@@ -95,7 +95,7 @@ export class SessionSidebarProvider
       this.#ready = false;
       this.#renderSurface();
     }
-    void vscode.commands.executeCommand("ohMyPiSessions.sessions.focus");
+    void focusSidebar();
     if (same && this.#ready) host.focus();
   }
 
@@ -108,7 +108,7 @@ export class SessionSidebarProvider
       this.#ready = false;
       this.#renderSurface();
     }
-    void vscode.commands.executeCommand("ohMyPiSessions.sessions.focus");
+    void focusSidebar();
     const intent = this.#focusQueue.begin(clearDraft, this.#ready);
     if (this.#view && this.#ready) {
       void this.#post({ type: "focusComposer", clear: clearDraft }).then(
@@ -260,4 +260,14 @@ function isMessageType(raw: unknown, type: string): boolean {
     !Array.isArray(raw) &&
     (raw as { type?: unknown }).type === type
   );
+}
+
+async function focusSidebar(): Promise<void> {
+  try {
+    await vscode.commands.executeCommand(
+      "workbench.view.extension.oh-my-pi-sessions",
+    );
+  } catch {
+    // Presentation routing must not fail if VS Code is already tearing down.
+  }
 }
