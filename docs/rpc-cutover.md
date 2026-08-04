@@ -22,10 +22,11 @@ The one sidebar follows Codex's quiet native-chat hierarchy while retaining OMP 
 
 - compact `Chats` header for session directory, settings, and duplicate-gated New Session;
 - flat readable conversation canvas with restrained user/assistant separation;
-- collapsible thinking and compact expandable tool rows;
+- one final assistant answer per user turn and one collapsed activity disclosure;
 - bottom-docked rounded composer with real access, model, effort, send, steer, follow-up, and abort;
 - worktree/branch identity below composer rather than a persistent technical rail;
-- inline OMP notices, retries, compaction, TTSR, subagent progress, and extension requests;
+- errors and extension requests inline; routine notices, retries, compaction, TTSR, thinking,
+  advisor, tools, and subagent progress folded behind activity;
 - direct file and URL handoff to VS Code;
 - visible transport and parity failures with no terminal fallback.
 
@@ -117,14 +118,14 @@ ID `R_kgDORpREFA`, so a future holder of either username cannot satisfy canonica
 
 | OMP capability | RPC surface |
 | --- | --- |
-| Streaming messages and thinking | Text-first conversation + collapsible reasoning |
-| Tool calls and partial results | Compact expandable tool rows |
+| Streaming messages and thinking | Text-first final answer; thinking folded behind activity |
+| Tool calls and partial results | One collapsed activity row with expandable tool details |
 | Skills and slash commands | Available-command menu + normal prompt path |
-| Advisor advice | Native advisory cards emitted by OMP |
+| Advisor advice | Folded activity; final answer remains primary conversation |
 | Steering/follow-up/abort | Composer controls |
-| Compaction/retry/TTSR | Timeline notices |
-| Todos | Timeline notices and phase list |
-| Subagents | Lifecycle/progress cards |
+| Compaction/retry/TTSR | Folded activity; failures visible |
+| Todos | Folded activity |
+| Subagents | Folded lifecycle/progress summary |
 | Extension `select`/`confirm`/`input`/`editor` | Inline request cards |
 | Extension status/widgets/notifications | Timeline status and notices |
 | Session history | Bounded `get_messages_page` traversal with documented busy/stale fallback |
@@ -150,7 +151,7 @@ it can revert unrelated changes under parallel worktree activity.
 - Parity selftest proves every seeded defect goes red and known-good state goes green.
 - Project launcher selftests prove `--rpc` is owned, stdout remains protocol-clean, and Loop
   initial prompt is host-driven.
-- Webview reducer tests cover streaming, tool progress, notices, advisor cards, and UI requests.
+- Webview reducer tests cover streaming, tool progress, notices, folded advisor activity, and UI requests.
 - Static webview browser pass covers desktop and narrow sidebar widths.
 - RPC lifecycle fixture launches real child processes, renders canonical frames through reducers,
   round-trips confirmation, steers, aborts, and keeps two processes independently addressable.

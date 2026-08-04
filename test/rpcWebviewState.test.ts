@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   applyHostFrame,
+  countFoldedActivity,
   createInitialWebviewState,
   reduceRpcFrame,
+  selectChatMessages,
 } from "../src/rpc/webviewState";
 
 test("webview reducer hydrates state and exact runtime surface", () => {
@@ -267,4 +269,94 @@ test("failed response is always visible", () => {
         notice.detail?.includes("queue rejected"),
     ),
   );
+});
+
+test("chat projection keeps one final answer and folds process transcript", () => {
+  let state = createInitialWebviewState();
+  const history = [
+    { role: "user", content: [{ type: "text", text: "Who is the advisor?" }] },
+    {
+      role: "assistant",
+      model: "claude-opus-5",
+      content: [
+        { type: "thinking", thinking: "Inspect config" },
+        { type: "text", text: "I'll check." },
+        { type: "toolCall", id: "one", name: "read", arguments: {} },
+      ],
+    },
+    { role: "toolResult", content: [{ type: "text", text: "raw config" }] },
+    {
+      role: "custom",
+      customType: "advisor",
+      content: '<advisory severity="concern">Verify it.</advisory>',
+    },
+    {
+      role: "assistant",
+      model: "claude-opus-5",
+      content: [{ type: "text", text: "Sol is the advisor." }],
+    },
+  ];
+  state = reduceRpcFrame(state, {
+    type: "response",
+    command: "get_messages",
+    success: true,
+    data: { messages: history },
+  });
+  state = reduceRpcFrame(state, {
+    type: "tool_execution_start",
+    toolCallId: "one",
+    toolName: "read",
+    args: { path: ".omp/config.yml" },
+  });
+  state = reduceRpcFrame(state, {
+    type: "tool_execution_end",
+    toolCallId: "one",
+    toolName: "read",
+    result: { content: "raw config" },
+  });
+
+  const chat = selectChatMessages(state.messages);
+  assert.deepEqual(
+    chat.map((message) => message.content),
+    [
+      [{ type: "text", text: "Who is the advisor?" }],
+      [{ type: "text", text: "Sol is the advisor." }],
+    ],
+  );
+  assert.ok(countFoldedActivity(state.messages, chat, state.tools, []) >= 2);
+});
+
+test("chat projection hides synthetic runtime prompts and transient history busy", () => {
+  let state = createInitialWebviewState();
+  state = reduceRpcFrame(state, {
+    type: "response",
+    command: "get_messages",
+    success: true,
+    data: {
+      messages: [
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: [{ type: "text", text: "Hi" }] },
+        { role: "assistant", display: false, content: [{ type: "text", text: "hidden" }] },
+        { role: "user", content: "### Session update [in progress]" },
+        { role: "assistant", content: [{ type: "text", text: "meta" }] },
+      ],
+    },
+  });
+  state = reduceRpcFrame(state, {
+    type: "response",
+    command: "get_messages_page",
+    success: false,
+    code: "session_busy",
+    error: "Cannot page messages while session is changing",
+  });
+
+  const chat = selectChatMessages(state.messages);
+  assert.deepEqual(
+    chat.map((message) => message.content),
+    [
+      [{ type: "text", text: "Hello" }],
+      [{ type: "text", text: "Hi" }],
+    ],
+  );
+  assert.equal(state.notices.length, 0);
 });

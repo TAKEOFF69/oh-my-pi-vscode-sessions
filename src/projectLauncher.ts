@@ -80,6 +80,7 @@ export const CANONICAL_ADAPTER_PATHS = [
   "scripts/git/state-guard.mjs",
   "scripts/git/ui-verification-reminder.mjs",
   "scripts/git/worktree-utils.mjs",
+  "scripts/omp/blackbull-codex.mjs",
   "docs/loop/bin/check-dispatch.py",
   "docs/loop/bin/codex-run.sh",
   "docs/loop/bin/redact-log.py",

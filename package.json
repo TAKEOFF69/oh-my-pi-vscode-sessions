@@ -2,7 +2,7 @@
   "name": "oh-my-pi-vscode-sessions",
   "displayName": "Oh My Pi Sessions",
   "description": "Run concurrent Oh My Pi RPC chats in one Codex-style VS Code sidebar, with isolated Git worktrees behind each writing session.",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",
