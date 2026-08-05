@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-08-05
+
+### Added
+
+- Durable first-prompt drafts, including bounded screenshots, survive extension-host reload and
+  clear only after OMP accepts ownership.
+- Chat rows and selected-chat header expose restart/close controls; dormant missing sessions are
+  pruned and removable without deleting repository files.
+- Live advisor identity is checked through OMP before first prompt and after completed turns.
+- Clipboard paste accepts Windows screenshot data exposed through either clipboard items or files.
+
+### Fixed
+
+- Terminal-answer watchdog recovers OMP RPC sessions that remain incorrectly marked streaming,
+  with one bounded abort and no timeout for active tools or legitimate long turns.
+- Ambient MCP mounts, unexpected native approvals, stale extension-host versions, missing session
+  files, unsafe file links, and low-signal `TL;DR` titles now fail closed or stay out of chat.
+- Fresh Dzialkopedia sessions reuse a short-lived exact fetch receipt, avoiding duplicate startup
+  fetch while preserving canonical `origin/main` proof.
+- Pristine extension-created worktrees are removed through repository cleanup when startup never
+  becomes durable; two-phase ownership and atomic writer leases preserve active, ambiguous, or
+  changed worktrees, and close/restart cannot outrun first-prompt acceptance.
+- Advisor probes are generation-bound and single-flight, user prompts wait for an active probe,
+  draft writes flush on shutdown, and abandoned unused worktrees recover only after exact marker
+  ownership and absence of a live writer lease are proved.
+
+### Changed
+
+- Live RPC processes are capped at six. Oldest unselected persisted idle chat may suspend and
+  remains resumable; active, running, or unpersisted chats are never evicted.
+- Dzialkopedia requires OMP 17.2.9 and explicit ambient-provider/MCP isolation.
+
 ## [2.5.2] - 2026-08-05
 
 ### Fixed

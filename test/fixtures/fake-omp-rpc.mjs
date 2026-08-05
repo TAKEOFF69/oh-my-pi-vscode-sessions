@@ -5,6 +5,9 @@ const badReady = process.argv.includes("--bad-ready");
 const badNegotiation = process.argv.includes("--bad-negotiation");
 const spawnDescendant = process.argv.includes("--spawn-descendant");
 const approvalRequest = process.argv.includes("--approval-request");
+const slowAdvisor = process.argv.includes("--slow-advisor");
+const hangPrompt = process.argv.includes("--hang-prompt");
+let advisorPending = false;
 
 const write = (frame) => {
   process.stdout.write(`${JSON.stringify(frame)}\n`);
@@ -84,6 +87,31 @@ input.on("line", (line) => {
     return;
   }
   if (command.type === "prompt") {
+    if (command.message === "/advisor status") {
+      advisorPending = true;
+      const finish = () => {
+        write({
+          type: "command_output",
+          text: "Advisor is enabled (openai-codex/gpt-5.6-sol). Context: 0 tokens. Spend: 0 input, 0 output, $0.0000.",
+        });
+        respond(command, { agentInvoked: false });
+        advisorPending = false;
+      };
+      if (slowAdvisor) setTimeout(finish, 200);
+      else finish();
+      return;
+    }
+    if (advisorPending) {
+      write({
+        type: "response",
+        id: command.id,
+        command: command.type,
+        success: false,
+        error: "prompt overlapped advisor probe",
+      });
+      return;
+    }
+    if (hangPrompt) return;
     write({
       type: "agent_start",
     });

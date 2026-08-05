@@ -33,15 +33,16 @@ export async function acquireWriterLease(
   cwd: string,
   label: string,
 ): Promise<LeaseAttempt> {
-  const repository = await repositoryIdentity(cwd);
-  const canonicalCwd = await realpath(repository?.root ?? cwd);
-  const leaseRoot = repository
-    ? nodePath.join(
-        await realpath(repository.commonDir),
-        "omp-vscode-session-leases",
-      )
-    : nodePath.join(os.tmpdir(), "omp-vscode-session-leases");
+  const { canonicalCwd, leaseRoot } = await leaseCoordinates(cwd);
   return acquireWriterLeaseAtRoot(canonicalCwd, label, leaseRoot);
+}
+
+export async function inspectActiveWriterLease(
+  cwd: string,
+): Promise<WriterLeaseOwner | undefined> {
+  const { canonicalCwd, leaseRoot } = await leaseCoordinates(cwd);
+  const owner = await readOwner(leasePathFor(canonicalCwd, leaseRoot));
+  return owner && isProcessAlive(owner.pid) ? owner : undefined;
 }
 
 export async function acquireWriterLeaseAtRoot(
@@ -50,11 +51,7 @@ export async function acquireWriterLeaseAtRoot(
   leaseRoot: string,
 ): Promise<LeaseAttempt> {
   await mkdir(leaseRoot, { recursive: true });
-  const key = crypto
-    .createHash("sha256")
-    .update(normalizeIdentity(canonicalCwd))
-    .digest("hex");
-  const leasePath = nodePath.join(leaseRoot, `${key}.json`);
+  const leasePath = leasePathFor(canonicalCwd, leaseRoot);
   const owner: WriterLeaseOwner = {
     token: crypto.randomUUID(),
     pid: process.pid,
@@ -143,4 +140,28 @@ function isAlreadyExists(error: unknown): boolean {
 function normalizeIdentity(value: string): string {
   const normalized = nodePath.resolve(value);
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+async function leaseCoordinates(cwd: string): Promise<{
+  canonicalCwd: string;
+  leaseRoot: string;
+}> {
+  const repository = await repositoryIdentity(cwd);
+  return {
+    canonicalCwd: await realpath(repository?.root ?? cwd),
+    leaseRoot: repository
+      ? nodePath.join(
+          await realpath(repository.commonDir),
+          "omp-vscode-session-leases",
+        )
+      : nodePath.join(os.tmpdir(), "omp-vscode-session-leases"),
+  };
+}
+
+function leasePathFor(canonicalCwd: string, leaseRoot: string): string {
+  const key = crypto
+    .createHash("sha256")
+    .update(normalizeIdentity(canonicalCwd))
+    .digest("hex");
+  return nodePath.join(leaseRoot, `${key}.json`);
 }

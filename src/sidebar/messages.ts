@@ -12,8 +12,12 @@ export type SidebarWebviewMessage =
   | { type: "draftChanged"; draft: string }
   | { type: "attachmentsChanged"; images: PromptImage[] }
   | { type: "focusSession"; id: string }
+  | { type: "closeSession"; id: string }
+  | { type: "restartSession"; id: string }
+  | { type: "removeSession"; id: string }
   | { type: "showLogs" }
-  | { type: "openSettings" };
+  | { type: "openSettings" }
+  | { type: "reloadWindow" };
 
 export type SidebarFocusIntent = { sequence: number; clear: boolean };
 
@@ -70,6 +74,7 @@ export function parseSidebarWebviewMessage(
     case "ready":
     case "showLogs":
     case "openSettings":
+    case "reloadWindow":
       return { type: raw.type };
     case "createSession": {
       const prompt = typeof raw.prompt === "string" ? raw.prompt : "";
@@ -91,8 +96,11 @@ export function parseSidebarWebviewMessage(
         ? { type: "draftChanged", draft: raw.draft }
         : null;
     case "focusSession":
+    case "closeSession":
+    case "restartSession":
+    case "removeSession":
       return typeof raw.id === "string" && raw.id.length > 0 && raw.id.length <= 128
-        ? { type: "focusSession", id: raw.id }
+        ? { type: raw.type, id: raw.id }
         : null;
     default:
       return null;

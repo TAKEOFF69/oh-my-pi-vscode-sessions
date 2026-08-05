@@ -25,7 +25,7 @@ the interface orchestrates sessions while OMP remains the agent runtime.
 ## Requirements and compatibility
 
 - VS Code 1.85 or newer;
-- OMP 17.1.3 or newer with RPC protocol v2;
+- OMP 17.2.9 or newer with RPC protocol v2;
 - Windows, macOS, or Linux on x64 or arm64.
 
 See [SUPPORT.md](SUPPORT.md) for compatibility and reporting guidance.
@@ -36,7 +36,7 @@ Generic OMP sessions do not require Dzialkopedia or another private repository. 
 RPC transport, single-sidebar presentation, session lifecycle, process reaping, writer leases, and
 editor context. Unverified generic sessions are labelled `Custom access`.
 
-Version 2.5.2 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
+Version 2.6.0 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
 Git origin and is fail-closed. Adapter source exposes repository identity, control-file names, and
 protocol identifiers, but contains no credentials. This is currently runtime separation, not yet
 separate packaging; see [project-policy boundary](docs/project-policy-boundary.md).
@@ -67,8 +67,9 @@ writer worktree per chat; switching presentation does not stop or merge those ru
 
 Normal extension sessions lock Claude Opus 5 at Extra High as driver and GPT-5.6 Sol at Extra High
 as advisor, with model fallback disabled. Launch parity is durable: a later OMP model or thinking-level
-change fails the session closed instead of silently drifting. OMP OAuth credentials remain in OMP's own
-auth storage.
+change fails the session closed instead of silently drifting. Dzialkopedia verifies that Sol is
+actually running before first prompt and again after completed turns. OMP OAuth credentials remain
+in OMP's own auth storage.
 
 For Dzialkopedia, standard session exposes narrow `loop_handoff` tool but never
 direct Loop lifecycle or dispatch tools. Once user and Opus decide Loop is right,
@@ -92,6 +93,15 @@ launch, then bootstraps local dependencies and environment. Old session worktree
 are never silently reused, so unfinished parallel work cannot bleed into new
 conversation. Distinct concurrent Loop handoffs receive separate controller
 worktrees, while repeated handoff for same alias focuses one existing controller.
+If OMP never accepts a real first prompt, exact pristine extension-created worktree is
+removed through repository-owned cleanup. Any changed, unowned, or history-diverged worktree is
+preserved. After a killed VS Code window, a later activation reclaims only an old exact-owned
+`unused` marker after atomically acquiring writer lease; active and `prompting` markers are
+preserved. Close and restart wait for acknowledged ownership to become durable, or return an
+unacknowledged reservation to `unused` only after transport teardown. Canonical cleanup revalidates
+branch, HEAD, origin ancestry, clean state, and reparse points. First-prompt text and screenshots
+remain in bounded workspace storage until OMP accepts them, so extension-host reload cannot
+silently lose submission.
 
 ## Advanced profiles
 
@@ -152,7 +162,7 @@ RPC protocol v2 and preserves:
 - model, effort, context, queue, worktree, and parity state.
 
 The Dzialkopedia launcher pins Opus 5/xhigh as controller, keeps Sol 5.6/xhigh
-advisor configuration, and exposes Loop-only tools only in Loop mode. Exact
+advisor, proves live running identity, and exposes Loop-only tools only in Loop mode. Exact
 runtime tool inventory must match, and every profile requires a project-policy
 marker tool, before any prompt is accepted. Repository launcher discovery also
 requires the canonical Dzialkopedia Git origin and byte equality for every
@@ -209,7 +219,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.5.2.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.6.0.vsix --force
 ```
 
 ## Current boundary
@@ -217,7 +227,8 @@ code --install-extension oh-my-pi-vscode-sessions-2.5.2.vsix --force
 Normal chats are one VS Code `WebviewView` connected to independently running OMP RPC processes.
 Processes live concurrently while window is open. Explicitly closing a chat or deactivating
 extension terminates its full process tree and waits for reaping before releasing its
-worktree writer lease;
+worktree writer lease. At most six RPC processes stay live; only an unselected persisted idle chat
+may be suspended automatically and it remains resumable;
 OMP's session file remains available for restart and resume. Repository root,
 nested-folder, and junction selections share one canonical lease identity.
 

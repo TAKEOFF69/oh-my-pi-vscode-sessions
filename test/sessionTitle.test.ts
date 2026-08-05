@@ -24,6 +24,10 @@ test("derives concise contextual titles from first meaningful prompt", () => {
     "Make the OMP sidebar like Codex",
   );
   assert.equal(
+    deriveSessionTitle("TL;DR\nRecover the paid audit transaction list"),
+    "Recover the paid audit transaction list",
+  );
+  assert.equal(
     deriveSessionTitle("/loop-start dzialkagpt-consumer"),
     "Loop: dzialkagpt consumer",
   );
@@ -50,6 +54,7 @@ test("never accepts infrastructure identity as chat title", () => {
   assert.equal(infrastructureTitle(branch, branch, cwd), true);
   assert.equal(infrastructureTitle(cwd, branch, cwd), true);
   assert.equal(normalizeRuntimeSessionTitle(branch, branch, cwd), undefined);
+  assert.equal(normalizeRuntimeSessionTitle("TL;DR", branch, cwd), undefined);
   assert.equal(
     normalizeRuntimeSessionTitle("Recover RCN classifier", branch, cwd),
     "Recover RCN classifier",

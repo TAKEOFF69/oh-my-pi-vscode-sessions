@@ -634,14 +634,15 @@ function isHiddenRuntimeMessage(
   customType: string,
   content: readonly UiContentBlock[],
 ): boolean {
-  if (customType === "xdev-mount-notice") return true;
-  if (rawRole !== "custom") return false;
   const text = content
     .filter((block): block is Extract<UiContentBlock, { type: "text" }> =>
       block.type === "text",
     )
     .map((block) => block.text)
     .join("\n");
+  if (rawRole === "user" && text.trim() === "/advisor status") return true;
+  if (customType === "xdev-mount-notice") return true;
+  if (rawRole !== "custom") return false;
   return /<system-notice>[\s\S]*The xd:\/\/ device inventory changed\./i.test(
     text,
   );

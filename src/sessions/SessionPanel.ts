@@ -38,6 +38,12 @@ export type SessionSpec = {
   updatedAt?: number;
   parity?: RpcParityProfile;
   persistedKind?: SessionKind;
+  initialPromptToken?: string;
+  onInitialPromptSettled?: (accepted: boolean) => void | Promise<void>;
+  onFirstPromptAccepted?: () => void | Promise<void>;
+  onFirstPromptStarted?: () => void | Promise<void>;
+  onFirstPromptRejected?: () => void | Promise<void>;
+  env?: NodeJS.ProcessEnv;
 };
 
 export class SessionPanel implements vscode.Disposable {
@@ -123,6 +129,11 @@ export class SessionPanel implements vscode.Disposable {
           this.#onChanged(this);
         },
         onLoopHandoff: (alias) => onLoopHandoff(alias, this),
+        onInitialPromptSettled: spec.onInitialPromptSettled,
+        onFirstPromptAccepted: spec.onFirstPromptAccepted,
+        onFirstPromptStarted: spec.onFirstPromptStarted,
+        onFirstPromptRejected: spec.onFirstPromptRejected,
+        env: spec.env,
       });
       this.#host = this.#rpcHost;
       return;

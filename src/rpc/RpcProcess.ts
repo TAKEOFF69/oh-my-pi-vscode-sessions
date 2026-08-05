@@ -29,6 +29,7 @@ export type RpcProcessOptions = {
   startupTimeoutMs?: number;
   requestTimeoutMs?: number;
   emitTitleEvents?: boolean;
+  env?: NodeJS.ProcessEnv;
 };
 
 type PendingRequest = {
@@ -39,7 +40,7 @@ type PendingRequest = {
 };
 
 export class RpcProcess extends EventEmitter {
-  readonly #options: Required<RpcProcessOptions>;
+  readonly #options: Omit<Required<RpcProcessOptions>, "env"> & { env?: NodeJS.ProcessEnv };
   readonly #decoder = new RpcFrameDecoder();
   #child: ChildProcessWithoutNullStreams | undefined;
   #pending = new Map<string, PendingRequest>();
@@ -87,6 +88,7 @@ export class RpcProcess extends EventEmitter {
       cwd: this.#options.cwd,
       env: {
         ...buildPtyEnv(),
+        ...this.#options.env,
         ...(this.#options.emitTitleEvents
           ? { PI_RPC_EMIT_TITLE: "1" }
           : {}),

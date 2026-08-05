@@ -76,11 +76,17 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
     const commands: Array<{ cwd: string; args: readonly string[] }> = [];
     let validated = false;
     let bootstrapped = false;
+    let ephemeralMarker: Readonly<Record<string, unknown>> | undefined;
 
     const result = await provisionDzialkiWorktree(root, "work", {
       suffix: () => "fixed",
       dateStamp: () => "20260728",
       configureHooks: true,
+      ephemeralCleanupToken: "123e4567-e89b-12d3-a456-426614174000",
+      writeEphemeralMarker: async (cwd, marker) => {
+        assert.equal(cwd, expectedCwd);
+        ephemeralMarker = marker;
+      },
       pathExists: (candidate) => candidate.endsWith(".githooks"),
       runGit: async (cwd, args) => {
         commands.push({ cwd, args });
@@ -107,10 +113,16 @@ describe("Dzialkopedia automatic worktree provisioning", () => {
       },
     });
 
-    assert.deepEqual(result, {
-      cwd: expectedCwd,
-      branch: expectedBranch,
-    });
+    assert.equal(result.cwd, expectedCwd);
+    assert.equal(result.branch, expectedBranch);
+    assert.equal(result.fetchedMainSha, "abc123");
+    assert.equal(typeof result.fetchedAtMs, "number");
+    assert.equal(
+      result.ephemeralCleanupToken,
+      "123e4567-e89b-12d3-a456-426614174000",
+    );
+    assert.equal(ephemeralMarker?.branch, expectedBranch);
+    assert.equal(ephemeralMarker?.phase, "unused");
     assert.equal(validated, true);
     assert.equal(bootstrapped, true);
     assert.deepEqual(commands[0].args, ["fetch", "origin", "main"]);

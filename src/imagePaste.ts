@@ -7,11 +7,21 @@ import {
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 const MAX_EDGE = 1568;
 
-export function pastedImageFiles(event: ClipboardEvent): File[] {
-  return [...(event.clipboardData?.items ?? [])]
-    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => file !== null);
+export function pastedImageFiles(
+  event: Pick<ClipboardEvent, "clipboardData">,
+): File[] {
+  const files: File[] = [];
+  const seen = new Set<File>();
+  const add = (file: File | null): void => {
+    if (!file || !file.type.startsWith("image/") || seen.has(file)) return;
+    seen.add(file);
+    files.push(file);
+  };
+  for (const item of Array.from(event.clipboardData?.items ?? [])) {
+    if (item.kind === "file") add(item.getAsFile());
+  }
+  for (const file of Array.from(event.clipboardData?.files ?? [])) add(file);
+  return files;
 }
 
 export async function preparePromptImage(
