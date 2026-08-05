@@ -8,6 +8,11 @@ import { extractLoopHandoffAlias } from "../loopHandoff";
 import type { SessionLogger } from "../logging";
 import type { SessionStatus } from "../sessions/SessionPanel";
 import type { SessionHost } from "../sessions/SessionHost";
+import {
+  parsePromptImages,
+  type PromptDraft,
+  type PromptImage,
+} from "../promptImages";
 import { parseRpcWebviewMessage } from "./bridgeMessages";
 import { loadRpcMessageHistory } from "./messageHistory";
 import {
@@ -20,6 +25,7 @@ import {
 import { InitialPromptOwnership } from "./initialPromptOwnership";
 import { classifyPreParityFrame } from "./preParity";
 import { PromptLifecycle } from "./promptLifecycle";
+import { buildRpcPromptCommand } from "./promptCommand";
 import { tagSurfaceMessage } from "../sidebar/surfaceRouting";
 import { TeardownBarrier } from "./teardownBarrier";
 import {
@@ -36,6 +42,7 @@ export type RpcSessionHostOptions = {
   executable: string;
   args: readonly string[];
   initialPrompt?: string;
+  initialImages?: readonly PromptImage[];
   resumeSessionFile?: string;
   parity?: RpcParityProfile;
   label: string;
@@ -82,6 +89,7 @@ export class RpcSessionHost implements SessionHost {
   #activeTurnOverflow = false;
   readonly #viewReplay = new RpcViewReplayBuffer<RpcFrame>();
   #viewDraft = "";
+  #viewImages: PromptImage[] = [];
   #startupDiagnostics = "";
   readonly #initialPromptOwnership: InitialPromptOwnership;
   #streaming = false;
@@ -103,6 +111,7 @@ export class RpcSessionHost implements SessionHost {
     this.#args = options.args;
     this.#initialPromptOwnership = new InitialPromptOwnership(
       options.initialPrompt,
+      options.initialImages,
     );
     this.#resumeSessionFile = options.resumeSessionFile;
     this.#parity = options.parity;
@@ -223,10 +232,7 @@ export class RpcSessionHost implements SessionHost {
     this.#cancelRehydration();
     this.#onStatusChange("starting");
     if (drafts.length > 0) {
-      await this.#post({
-        type: "restoreDraft",
-        text: drafts.join("\n\n"),
-      });
+      await this.#restoreDrafts(drafts);
     }
     await this.#post({
       type: "transport",
@@ -258,7 +264,11 @@ export class RpcSessionHost implements SessionHost {
           await this.#rehydrateWebview(attachmentRevision);
         }
         await this.#post(
-          { type: "setComposer", text: this.#viewDraft },
+          {
+            type: "setComposer",
+            text: this.#viewDraft,
+            images: this.#viewImages,
+          },
           attachmentRevision,
         );
         return;
@@ -266,11 +276,19 @@ export class RpcSessionHost implements SessionHost {
       case "draftChanged":
         this.#viewDraft = message.draft;
         return;
+      case "attachmentsChanged":
+        this.#viewImages = message.images;
+        return;
       case "prompt":
       case "steer":
       case "follow_up":
         this.#viewDraft = "";
-        await this.#sendPrompt(message.type, message.message);
+        this.#viewImages = [];
+        await this.#sendPrompt(
+          message.type,
+          message.message,
+          message.images,
+        );
         return;
       case "abort":
         await this.#request({ type: "abort" });
@@ -487,7 +505,11 @@ export class RpcSessionHost implements SessionHost {
       if (!restored) {
         const initialPrompt = this.#initialPromptOwnership.claimForDelivery();
         if (initialPrompt) {
-          await this.#sendPrompt("prompt", initialPrompt);
+          await this.#sendPrompt(
+            "prompt",
+            initialPrompt.message,
+            initialPrompt.images,
+          );
         }
       }
     } catch (error) {
@@ -515,7 +537,11 @@ export class RpcSessionHost implements SessionHost {
   async #restoreInitialPrompt(): Promise<void> {
     const prompt = this.#initialPromptOwnership.claimForRestore();
     if (!prompt || this.#disposed) return;
-    await this.#post({ type: "restoreDraft", text: prompt });
+    await this.#post({
+      type: "restoreDraft",
+      text: prompt.message,
+      images: prompt.images,
+    });
   }
 
   #validateParity(state: RpcSessionState): boolean {
@@ -554,10 +580,7 @@ export class RpcSessionHost implements SessionHost {
     this.#preParityBytes = 0;
     const drafts = this.#promptLifecycle.drain();
     if (drafts.length > 0) {
-      void this.#post({
-        type: "restoreDraft",
-        text: drafts.join("\n\n"),
-      });
+      void this.#restoreDrafts(drafts);
     }
     const rpc = this.#rpc;
     this.#rpc = undefined;
@@ -678,7 +701,11 @@ export class RpcSessionHost implements SessionHost {
         ) {
           const draft = this.#promptLifecycle.fail(frame.id);
           if (draft !== undefined) {
-            void this.#post({ type: "restoreDraft", text: draft });
+            void this.#post({
+              type: "restoreDraft",
+              text: draft.message,
+              images: draft.images,
+            });
           }
         }
         break;
@@ -763,9 +790,10 @@ export class RpcSessionHost implements SessionHost {
   async #sendPrompt(
     type: "prompt" | "steer" | "follow_up",
     message: string,
+    images: readonly PromptImage[] = [],
   ): Promise<void> {
     if (!this.#parityPassed || this.#parityFailed) {
-      await this.#post({ type: "restoreDraft", text: message });
+      await this.#post({ type: "restoreDraft", text: message, images });
       await vscode.window.showErrorMessage(
         "OMP Sessions: prompt blocked until exact RPC parity passes.",
       );
@@ -773,31 +801,31 @@ export class RpcSessionHost implements SessionHost {
     }
     const rpc = this.#rpc;
     if (!rpc?.running) {
-      await this.#post({ type: "restoreDraft", text: message });
+      await this.#post({ type: "restoreDraft", text: message, images });
       await vscode.window.showErrorMessage(
         "OMP Sessions: RPC runtime is not running.",
       );
       return;
     }
     const id = `vscode_prompt_${++this.#promptSequence}`;
-    this.#promptLifecycle.begin(id, message);
-    const command =
-      type === "prompt"
-        ? {
-            type: "prompt",
-            id,
-            message,
-            ...(this.#streaming
-              ? { streamingBehavior: "followUp" }
-              : {}),
-          }
-        : { type, id, message };
+    this.#promptLifecycle.begin(id, message, images);
+    const command = buildRpcPromptCommand(
+      type,
+      id,
+      message,
+      images,
+      this.#streaming,
+    );
     try {
       await rpc.request(command);
     } catch (error) {
       const draft = this.#promptLifecycle.fail(id);
       if (draft !== undefined) {
-        await this.#post({ type: "restoreDraft", text: draft });
+        await this.#post({
+          type: "restoreDraft",
+          text: draft.message,
+          images: draft.images,
+        });
       }
       const failure = error instanceof Error ? error.message : String(error);
       this.#logger.error(
@@ -806,6 +834,20 @@ export class RpcSessionHost implements SessionHost {
       );
       await vscode.window.showErrorMessage(`OMP Sessions: ${failure}`);
     }
+  }
+
+  async #restoreDrafts(drafts: readonly PromptDraft[]): Promise<void> {
+    let images: PromptImage[] = [];
+    for (const image of drafts.flatMap((draft) => draft.images)) {
+      const next = parsePromptImages([...images, image]);
+      if (next === null) break;
+      images = next;
+    }
+    await this.#post({
+      type: "restoreDraft",
+      text: drafts.map((draft) => draft.message).join("\n\n"),
+      images,
+    });
   }
 
   async #request(
@@ -922,6 +964,10 @@ export class RpcSessionHost implements SessionHost {
       typeof message.text === "string"
     ) {
       this.#viewDraft = message.text;
+      if ("images" in message) {
+        const images = parsePromptImages(message.images);
+        if (images !== null) this.#viewImages = images;
+      }
     }
     if (
       attachmentRevision !== undefined &&

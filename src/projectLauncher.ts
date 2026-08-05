@@ -130,7 +130,7 @@ export async function detectProjectLauncher(
   )(identity, launcher);
   if (!matches) {
     throw new Error(
-      "Dzialkopedia adapter does not match canonical GitHub main; refusing execution",
+      "Selected Dzialkopedia worktree does not match current canonical GitHub main; refusing execution. Start a fresh New Chat to provision current origin/main.",
     );
   }
   return {

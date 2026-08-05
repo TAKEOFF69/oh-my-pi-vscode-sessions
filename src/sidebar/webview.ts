@@ -1,4 +1,13 @@
 import "./webview.css";
+import { pastedImageFiles, preparePromptImage } from "../imagePaste";
+import {
+  decodedBase64Bytes,
+  MAX_PROMPT_IMAGES,
+  MAX_PROMPT_IMAGE_BYTES,
+  parsePromptImages,
+  promptFrameFits,
+  type PromptImage,
+} from "../promptImages";
 
 type SidebarSession = {
   id: string;
@@ -95,6 +104,7 @@ root.innerHTML = `
     <section class="composer-shell">
       <div id="creation-error" class="creation-error" role="status" hidden></div>
       <div class="composer">
+        <div id="attachment-strip" class="attachment-strip" aria-label="Attached screenshots" hidden></div>
         <label class="sr-only" for="composer-input">Start a new OMP chat</label>
         <textarea id="composer-input" rows="2" placeholder="Ask OMP anything" spellcheck="true"></textarea>
         <div class="composer-bar">
@@ -119,6 +129,7 @@ root.innerHTML = `
 `;
 
 const composer = requireTextArea("composer-input");
+const attachmentStrip = requireElement("attachment-strip");
 const sendButton = requireButton("send-button");
 const sessionList = requireElement("session-list");
 const emptyMark = requireElement("empty-mark");
@@ -128,7 +139,14 @@ const accessLabel = requireElement("access-label");
 const modelLabel = requireElement("model-label");
 const viewAllButton = requireButton("view-all-button");
 
-composer.value = vscode.getState()?.draft ?? "";
+const restoredState = vscode.getState();
+composer.value = restoredState?.draft ?? "";
+let attachments: PromptImage[] = [];
+let attachmentRevision = 0;
+let renderedAttachmentRevision = -1;
+let attachmentEpoch = 0;
+let pendingImagePastes = 0;
+let imagePasteQueue = Promise.resolve();
 resizeComposer();
 
 window.addEventListener("message", (event: MessageEvent<unknown>) =>
@@ -138,10 +156,17 @@ window.addEventListener("omp-sidebar-frame", (event) =>
   receiveHostMessage((event as CustomEvent).detail),
 );
 composer.addEventListener("input", () => {
-  vscode.setState({ draft: composer.value });
+  creationError.hidden = true;
+  persistComposer();
   post({ type: "draftChanged", draft: composer.value });
   resizeComposer();
   renderComposer();
+});
+composer.addEventListener("paste", (event) => {
+  const files = pastedImageFiles(event);
+  if (files.length === 0) return;
+  event.preventDefault();
+  queueImagePaste(files);
 });
 composer.addEventListener("keydown", (event) => {
   if (
@@ -186,22 +211,32 @@ function receiveHostMessage(raw: unknown): void {
     newDraft(raw.clear === true);
   } else if (raw.type === "setDraft") {
     composer.value = typeof raw.draft === "string" ? raw.draft : "";
-    vscode.setState({ draft: composer.value });
+    attachmentEpoch += 1;
+    replaceAttachments(parsePromptImages(raw.images) ?? []);
+    persistComposer();
     resizeComposer();
     renderComposer();
   } else if (raw.type === "sessionCreated") {
     composer.value = "";
-    vscode.setState({ draft: "" });
+    attachmentEpoch += 1;
+    replaceAttachments([]);
+    persistComposer();
     post({ type: "draftChanged", draft: "" });
+    post({ type: "attachmentsChanged", images: [] });
     creationError.hidden = true;
     resizeComposer();
     renderComposer();
   } else if (raw.type === "sessionCreationFailed") {
     const draft = typeof raw.draft === "string" ? raw.draft : "";
+    const images = parsePromptImages(raw.images);
     if (draft) {
       composer.value = draft;
-      vscode.setState({ draft });
     }
+    if (images) {
+      attachmentEpoch += 1;
+      replaceAttachments(images);
+    }
+    persistComposer();
     creationError.textContent =
       typeof raw.detail === "string" ? raw.detail : "Session was not created.";
     creationError.hidden = false;
@@ -264,26 +299,41 @@ function patchSessionRows(): void {
 }
 
 function renderComposer(): void {
+  renderAttachments();
   composer.disabled = state.creating;
-  sendButton.disabled = state.creating || !composer.value.trim();
-  creationStatus.textContent = state.creating ? "Preparing session…" : "";
+  sendButton.disabled =
+    state.creating || pendingImagePastes > 0 || !composer.value.trim();
+  creationStatus.textContent = state.creating
+    ? "Preparing session…"
+    : pendingImagePastes > 0
+      ? "Preparing screenshot…"
+      : "";
 }
 
 function submit(): void {
   const prompt = composer.value;
-  if (!prompt.trim() || state.creating) return;
+  if (!prompt.trim() || state.creating || pendingImagePastes > 0) return;
   if (new TextEncoder().encode(prompt).byteLength > MAX_PROMPT_BYTES) {
     creationError.textContent = "Prompt is too large to start a session.";
+    creationError.hidden = false;
+    return;
+  }
+  if (!promptFrameFits(prompt, attachments)) {
+    creationError.textContent =
+      "Message and screenshots exceed OMP's safe RPC input limit.";
     creationError.hidden = false;
     return;
   }
   creationError.hidden = true;
   state = { ...state, creating: true };
   composer.value = "";
-  vscode.setState({ draft: "" });
+  const images = attachments;
+  attachmentEpoch += 1;
+  replaceAttachments([]);
+  persistComposer();
   resizeComposer();
   renderComposer();
-  post({ type: "createSession", prompt });
+  post({ type: "createSession", prompt, images });
 }
 
 function toggleExpanded(): void {
@@ -294,12 +344,105 @@ function toggleExpanded(): void {
 function newDraft(clear: boolean): void {
   if (clear && !state.creating) {
     composer.value = "";
-    vscode.setState({ draft: "" });
+    attachmentEpoch += 1;
+    replaceAttachments([]);
+    persistComposer();
     creationError.hidden = true;
+    post({ type: "attachmentsChanged", images: [] });
     resizeComposer();
     renderComposer();
   }
   composer.focus();
+}
+
+async function attachImages(
+  files: readonly File[],
+  queuedEpoch: number,
+): Promise<void> {
+  try {
+    for (const file of files) {
+      if (queuedEpoch !== attachmentEpoch) return;
+      if (attachments.length >= MAX_PROMPT_IMAGES) {
+        throw new Error(`Attach at most ${MAX_PROMPT_IMAGES} screenshots.`);
+      }
+      const used = attachments.reduce(
+        (total, image) => total + (decodedBase64Bytes(image.data) ?? 0),
+        0,
+      );
+      const image = await preparePromptImage(
+        file,
+        MAX_PROMPT_IMAGE_BYTES - used,
+      );
+      if (queuedEpoch !== attachmentEpoch) return;
+      const nextAttachments = parsePromptImages([...attachments, image]);
+      if (nextAttachments === null) {
+        throw new Error("Screenshot attachment limit reached.");
+      }
+      replaceAttachments(nextAttachments);
+      creationError.hidden = true;
+      persistComposer();
+      post({ type: "attachmentsChanged", images: attachments });
+      renderComposer();
+    }
+  } catch (error) {
+    creationError.textContent =
+      error instanceof Error ? error.message : String(error);
+    creationError.hidden = false;
+  }
+}
+
+function queueImagePaste(files: readonly File[]): void {
+  pendingImagePastes += 1;
+  const queuedEpoch = attachmentEpoch;
+  renderComposer();
+  imagePasteQueue = imagePasteQueue
+    .then(() => attachImages(files, queuedEpoch))
+    .finally(() => {
+      pendingImagePastes -= 1;
+      renderComposer();
+    });
+}
+
+function renderAttachments(): void {
+  if (renderedAttachmentRevision === attachmentRevision) return;
+  renderedAttachmentRevision = attachmentRevision;
+  attachmentStrip.replaceChildren();
+  attachmentStrip.hidden = attachments.length === 0;
+  attachments.forEach((image, index) => {
+    const item = document.createElement("div");
+    item.className = "attachment-chip";
+    const preview = document.createElement("img");
+    preview.src = `data:${image.mimeType};base64,${image.data}`;
+    preview.alt = `Screenshot ${index + 1}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "attachment-remove";
+    remove.title = `Remove screenshot ${index + 1}`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.textContent = "\u00d7";
+    remove.addEventListener("click", () => {
+      replaceAttachments(
+        attachments.filter((_, itemIndex) => itemIndex !== index),
+      );
+      creationError.hidden = true;
+      persistComposer();
+      post({ type: "attachmentsChanged", images: attachments });
+      renderComposer();
+      composer.focus();
+    });
+    item.append(preview, remove);
+    attachmentStrip.append(item);
+  });
+}
+
+function persistComposer(): void {
+  // Host owns binary attachment state; do not serialize base64 on each keystroke.
+  vscode.setState({ draft: composer.value });
+}
+
+function replaceAttachments(images: readonly PromptImage[]): void {
+  attachments = [...images];
+  attachmentRevision += 1;
 }
 
 function resizeComposer(): void {

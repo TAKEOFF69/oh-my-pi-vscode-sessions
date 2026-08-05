@@ -1,3 +1,5 @@
+import type { PromptDraft, PromptImage } from "../promptImages";
+
 export type InitialPromptState = "pending" | "delivered" | "restored" | "none";
 
 /**
@@ -5,11 +7,13 @@ export type InitialPromptState = "pending" | "delivered" | "restored" | "none";
  * State deliberately survives RPC restarts so a restored draft is never auto-sent.
  */
 export class InitialPromptOwnership {
-  readonly #prompt: string | undefined;
+  readonly #prompt: PromptDraft | undefined;
   #state: InitialPromptState;
 
-  constructor(prompt?: string) {
-    this.#prompt = prompt;
+  constructor(prompt?: string, images: readonly PromptImage[] = []) {
+    this.#prompt = prompt
+      ? { message: prompt, images: [...images] }
+      : undefined;
     this.#state = prompt ? "pending" : "none";
   }
 
@@ -17,13 +21,13 @@ export class InitialPromptOwnership {
     return this.#state;
   }
 
-  claimForDelivery(): string | undefined {
+  claimForDelivery(): PromptDraft | undefined {
     if (this.#state !== "pending") return undefined;
     this.#state = "delivered";
     return this.#prompt;
   }
 
-  claimForRestore(): string | undefined {
+  claimForRestore(): PromptDraft | undefined {
     if (this.#state !== "pending") return undefined;
     this.#state = "restored";
     return this.#prompt;

@@ -8,6 +8,10 @@ Extension keeps session metadata needed by VS Code, including session label, wor
 branch, process state, and local diagnostic timing. OMP owns conversation storage, model-provider
 authentication, tool execution, and provider requests.
 
+While attached, screenshot bytes exist in current webview memory and extension-host draft memory so
+switching chats or a failed launch can restore them. They are not written to recent-session metadata
+or VS Code webview state, and they leave extension only when included in a prompt sent to OMP.
+
 Extension output channel may contain local paths, branch names, executable errors, and process
 timings. Review and redact logs before sharing them publicly.
 

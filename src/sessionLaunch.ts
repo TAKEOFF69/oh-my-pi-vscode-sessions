@@ -14,6 +14,7 @@ const LOOP_TOOLS = [...LOOP_CUSTOM_TOOLS, "hub"] as const;
 const WORK_TOOLS = [
   "read",
   "bash",
+  "blackbull_codex",
   "edit",
   "debug",
   "eval",

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
 
+import type { PromptDraft, PromptImage } from "../promptImages";
 import type { RpcSessionHost } from "../rpc/RpcSessionHost";
 import { buildRpcHtml } from "../rpc/rpcHtml";
 import type { SessionKind, SessionStatus } from "../sessions/SessionPanel";
@@ -30,7 +31,7 @@ export type SidebarProfile = {
 };
 
 type SidebarCallbacks = {
-  createSession: (prompt: string) => Promise<boolean>;
+  createSession: (draft: PromptDraft) => Promise<boolean>;
   focusSession: (id: string) => Promise<void> | void;
   clearActiveSession: () => void;
   showLogs: () => void;
@@ -46,6 +47,7 @@ export class SessionSidebarProvider
   #sessions: readonly SidebarSession[] = [];
   #creating = false;
   #homeDraft = "";
+  #homeImages: PromptImage[] = [];
   #surfaceToken = "";
   readonly #router = new SelectedSessionRouter<vscode.Webview, RpcSessionHost>();
   readonly #focusQueue = new SidebarFocusQueue();
@@ -100,7 +102,10 @@ export class SessionSidebarProvider
   }
 
   showHome(clearDraft = false): void {
-    if (clearDraft) this.#homeDraft = "";
+    if (clearDraft) {
+      this.#homeDraft = "";
+      this.#homeImages = [];
+    }
     const changed = Boolean(this.#router.selected);
     this.#detachConversation();
     this.#callbacks.clearActiveSession();
@@ -152,7 +157,11 @@ export class SessionSidebarProvider
       case "ready":
         this.#ready = true;
         await this.#postHomeState();
-        await this.#post({ type: "setDraft", draft: this.#homeDraft });
+        await this.#post({
+          type: "setDraft",
+          draft: this.#homeDraft,
+          images: this.#homeImages,
+        });
         {
           const pending = this.#focusQueue.consumePending();
           if (!pending) return;
@@ -161,6 +170,9 @@ export class SessionSidebarProvider
         return;
       case "draftChanged":
         this.#homeDraft = message.draft;
+        return;
+      case "attachmentsChanged":
+        this.#homeImages = message.images;
         return;
       case "showLogs":
         this.#callbacks.showLogs();
@@ -175,31 +187,38 @@ export class SessionSidebarProvider
         await this.#callbacks.focusSession(message.id);
         return;
       case "createSession":
-        await this.#createSession(message.prompt);
+        await this.#createSession({
+          message: message.prompt,
+          images: message.images,
+        });
         return;
     }
   }
 
-  async #createSession(prompt: string): Promise<void> {
+  async #createSession(draft: PromptDraft): Promise<void> {
     if (this.#creating) return;
     this.#creating = true;
-    this.#homeDraft = prompt;
+    this.#homeDraft = draft.message;
+    this.#homeImages = draft.images;
     await this.#postHomeState();
     try {
-      const created = await this.#callbacks.createSession(prompt);
+      const created = await this.#callbacks.createSession(draft);
       if (created) {
         this.#homeDraft = "";
+        this.#homeImages = [];
       } else {
         await this.#post({
           type: "sessionCreationFailed",
-          draft: prompt,
+          draft: draft.message,
+          images: draft.images,
           detail: "Session was not created. Your draft was restored.",
         });
       }
     } catch (error) {
       await this.#post({
         type: "sessionCreationFailed",
-        draft: prompt,
+        draft: draft.message,
+        images: draft.images,
         detail: error instanceof Error ? error.message : String(error),
       });
     } finally {

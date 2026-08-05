@@ -21,6 +21,85 @@ def dispatch_frame(page, frame: dict) -> None:
     )
 
 
+def paste_screenshot(page) -> str:
+    return page.locator("#composer-input").evaluate(
+        """async (composer) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 8;
+          canvas.height = 8;
+          const context = canvas.getContext("2d");
+          context.fillStyle = "#2774c8";
+          context.fillRect(0, 0, 8, 8);
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+          const file = new File([blob], "screenshot.png", { type: "image/png" });
+          const transfer = new DataTransfer();
+          transfer.items.add(file);
+          const event = new Event("paste", { bubbles: true, cancelable: true });
+          Object.defineProperty(event, "clipboardData", { value: transfer });
+          composer.dispatchEvent(event);
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          let binary = "";
+          for (const byte of bytes) binary += String.fromCharCode(byte);
+          return btoa(binary);
+        }""",
+    )
+
+
+def delay_image_decode(page, milliseconds: int = 250) -> None:
+    page.evaluate(
+        """(delay) => {
+          window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__ ??= window.createImageBitmap;
+          window.createImageBitmap = async (...args) => {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            return window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__(...args);
+          };
+        }""",
+        milliseconds,
+    )
+
+
+def restore_image_decode(page) -> None:
+    page.evaluate(
+        """() => {
+          if (window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__) {
+            window.createImageBitmap = window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__;
+            delete window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__;
+          }
+        }"""
+    )
+
+
+def assert_attachment_race_and_typing_stability(page, name: str) -> str:
+    delay_image_decode(page)
+    image_data = paste_screenshot(page)
+    assert page.locator("#send-button").is_disabled(), (
+        f"{name} send button enabled while screenshot preparation was pending"
+    )
+    page.locator(".attachment-remove").first.evaluate("(button) => button.click()")
+    assert page.locator(".attachment-chip").count() == 0, (
+        f"{name} did not remove the existing screenshot before decode completed"
+    )
+    page.locator(".attachment-chip").first.wait_for()
+    page.wait_for_timeout(350)
+    restore_image_decode(page)
+    assert page.locator(".attachment-chip").count() == 1, (
+        f"{name} resurrected a removed screenshot during concurrent paste"
+    )
+    stable = page.evaluate(
+        """() => {
+          const preview = document.querySelector('.attachment-chip img');
+          const composer = document.querySelector('#composer-input');
+          for (let index = 0; index < 200; index += 1) {
+            composer.value = `typing stability ${index}`;
+            composer.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          return preview === document.querySelector('.attachment-chip img');
+        }"""
+    )
+    assert stable, f"{name} rebuilt screenshot previews while typing"
+    return image_data
+
+
 def verify_view(page, name: str, *, empty: bool = False) -> Path:
     errors: list[str] = []
     page.on(
@@ -146,6 +225,25 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     assert premature == [], f"{name} posted prompt before runtime readiness"
     dispatch_frame(page, {"type": "parity", "ok": True})
     dispatch_frame(page, {"type": "transport", "status": "ready"})
+    image_data = paste_screenshot(page)
+    page.locator(".attachment-chip").wait_for()
+    assert "images" not in page.evaluate(
+        "() => JSON.parse(sessionStorage.getItem('omp-shared-view-state'))"
+    ), f"{name} serialized screenshot bytes into per-keystroke webview state"
+    dispatch_frame(
+        page,
+        {"type": "setComposer", "text": "text-only editor update"},
+    )
+    assert page.locator("#composer-input").input_value() == "text-only editor update"
+    assert page.locator(".attachment-chip").count() == 1, (
+        f"{name} text-only setComposer discarded screenshot attachments"
+    )
+    image_data = assert_attachment_race_and_typing_stability(page, name)
+    page.locator("#composer-input").fill("send button regression proof")
+    page.screenshot(
+        path=str(OUTPUT / f"rpc-webview-{name}-attachment.png"),
+        full_page=True,
+    )
     assert page.locator("#send-button").is_enabled(), (
         f"{name} send button stayed disabled after typing"
     )
@@ -154,7 +252,15 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     assert {
         "type": "prompt",
         "message": "send button regression proof",
+        "images": [
+            {
+                "type": "image",
+                "mimeType": "image/png",
+                "data": image_data,
+            }
+        ],
     } in posted, f"{name} send click did not post prompt: {posted}"
+    assert page.locator(".attachment-chip").count() == 0
 
     if not empty:
         assert page.locator("[data-tool-details='tool-verify']").is_visible()
@@ -360,13 +466,32 @@ def verify_sidebar(browser, width: int, height: int, name: str) -> tuple[Path, f
         }"""
     )
     composer = page.locator("#composer-input")
+    image_data = paste_screenshot(page)
+    page.locator(".attachment-chip").wait_for()
+    image_data = assert_attachment_race_and_typing_stability(
+        page, f"sidebar {name}"
+    )
+    page.screenshot(
+        path=str(OUTPUT / f"sidebar-{name}-attachment.png"),
+        full_page=True,
+    )
     composer.fill("Recover exact RCN progress")
     composer.press("Enter")
     page.locator("#send-button").click(force=True)
     posts = page.evaluate("() => window.__OMP_SIDEBAR_POSTS__")
     creates = [post for post in posts if post.get("type") == "createSession"]
     assert creates == [
-        {"type": "createSession", "prompt": "Recover exact RCN progress"}
+        {
+            "type": "createSession",
+            "prompt": "Recover exact RCN progress",
+            "images": [
+                {
+                    "type": "image",
+                    "mimeType": "image/png",
+                    "data": image_data,
+                }
+            ],
+        }
     ], f"sidebar {name} double-submitted first prompt: {creates}"
 
     dispatch_sidebar(
@@ -374,11 +499,19 @@ def verify_sidebar(browser, width: int, height: int, name: str) -> tuple[Path, f
         {
             "type": "sessionCreationFailed",
             "draft": "Recover exact RCN progress",
+            "images": [
+                {
+                    "type": "image",
+                    "mimeType": "image/png",
+                    "data": image_data,
+                }
+            ],
             "detail": "fixture failure",
         },
     )
     dispatch_sidebar(page, {"type": "state", "creating": False, "sessions": []})
     assert composer.input_value() == "Recover exact RCN progress"
+    assert page.locator(".attachment-chip").count() == 1
     assert page.get_by_text("fixture failure", exact=True).is_visible()
 
     sessions = [

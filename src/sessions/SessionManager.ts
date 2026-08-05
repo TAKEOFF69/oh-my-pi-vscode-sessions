@@ -10,6 +10,7 @@ import {
   resolveWorkingDirectory,
 } from "../config";
 import type { SessionLogger } from "../logging";
+import type { PromptImage } from "../promptImages";
 import {
   canonicalDzialkiOrigin,
   detectProjectLauncher,
@@ -98,8 +99,10 @@ export class SessionManager implements vscode.Disposable {
     this.#logger = logger;
     this.#recent = new RecentSessionStore(workspaceState);
     this.sidebar = new SessionSidebarProvider(extensionUri, {
-      createSession: async (prompt) =>
-        Boolean(await this.newPrimarySession(prompt)),
+      createSession: async (draft) =>
+        Boolean(
+          await this.newPrimarySession(draft.message, draft.images),
+        ),
       focusSession: (id) => this.openSession(id),
       clearActiveSession: () => this.#clearActiveSession(),
       showLogs: () => this.#logger.show(),
@@ -126,6 +129,7 @@ export class SessionManager implements vscode.Disposable {
 
   newPrimarySession(
     initialPrompt?: string,
+    initialImages: readonly PromptImage[] = [],
   ): Promise<SessionPanel | undefined> {
     const prompt = initialPrompt;
     if (!prompt?.trim()) {
@@ -133,7 +137,15 @@ export class SessionManager implements vscode.Disposable {
       return Promise.resolve(undefined);
     }
     return this.#primarySessionGate.run(
-      () => this.newSession("work", "rpc", "auto", undefined, prompt),
+      () =>
+        this.newSession(
+          "work",
+          "rpc",
+          "auto",
+          undefined,
+          prompt,
+          initialImages,
+        ),
       (reason) =>
         this.#logger.info(
           `Ignored duplicate New Session request (${reason})`,
@@ -147,6 +159,7 @@ export class SessionManager implements vscode.Disposable {
     directoryMode: DirectoryMode = "auto",
     requestedLoopAlias?: string,
     initialPrompt?: string,
+    initialImages: readonly PromptImage[] = [],
     resume?: RecentSessionRecord,
   ): Promise<SessionPanel | undefined> {
     if (!this.#acceptingSessions) {
@@ -159,6 +172,7 @@ export class SessionManager implements vscode.Disposable {
         directoryMode,
         requestedLoopAlias,
         initialPrompt,
+        initialImages,
         resume,
       ),
     );
@@ -175,6 +189,7 @@ export class SessionManager implements vscode.Disposable {
     directoryMode: DirectoryMode,
     requestedLoopAlias?: string,
     initialPrompt?: string,
+    initialImages: readonly PromptImage[] = [],
     resume?: RecentSessionRecord,
   ): Promise<SessionPanel | undefined> {
     this.#logger.info(`New ${kind} ${transport} session requested`);
@@ -388,6 +403,7 @@ export class SessionManager implements vscode.Disposable {
       initialPrompt: resume
         ? undefined
         : initialPrompt ?? launch.initialPrompt,
+      initialImages: resume ? undefined : initialImages,
       resumeSessionFile: resume?.sessionFile,
       titleSource: resume?.titleSource ??
         (initialPrompt ? "provisional" : "runtime"),
@@ -478,6 +494,7 @@ export class SessionManager implements vscode.Disposable {
       "auto",
       record.loopAlias,
       undefined,
+      [],
       record,
     );
     this.#resumeFlights.set(id, opening);

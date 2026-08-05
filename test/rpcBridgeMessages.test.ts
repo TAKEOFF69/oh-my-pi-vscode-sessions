@@ -6,7 +6,20 @@ import { parseRpcWebviewMessage } from "../src/rpc/bridgeMessages";
 test("RPC webview bridge accepts bounded user actions", () => {
   assert.deepEqual(
     parseRpcWebviewMessage({ type: "prompt", message: "Ship it" }),
-    { type: "prompt", message: "Ship it" },
+    { type: "prompt", message: "Ship it", images: [] },
+  );
+  const image = {
+    type: "image",
+    mimeType: "image/png",
+    data: "iVBORw==",
+  } as const;
+  assert.deepEqual(
+    parseRpcWebviewMessage({
+      type: "steer",
+      message: "Inspect this",
+      images: [image],
+    }),
+    { type: "steer", message: "Inspect this", images: [image] },
   );
   assert.deepEqual(
     parseRpcWebviewMessage({
@@ -38,6 +51,16 @@ test("RPC webview bridge accepts bounded user actions", () => {
 test("RPC webview bridge rejects empty, oversized, and malformed input", () => {
   assert.equal(
     parseRpcWebviewMessage({ type: "prompt", message: " " }),
+    null,
+  );
+  assert.equal(
+    parseRpcWebviewMessage({
+      type: "prompt",
+      message: "Bad image",
+      images: [
+        { type: "image", mimeType: "text/html", data: "iVBORw==" },
+      ],
+    }),
     null,
   );
   assert.equal(

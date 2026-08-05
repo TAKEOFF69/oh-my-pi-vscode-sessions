@@ -36,7 +36,7 @@ Generic OMP sessions do not require Dzialkopedia or another private repository. 
 RPC transport, single-sidebar presentation, session lifecycle, process reaping, writer leases, and
 editor context. Unverified generic sessions are labelled `Custom access`.
 
-Version 2.5.0 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
+Version 2.5.1 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
 Git origin and is fail-closed. Adapter source exposes repository identity, control-file names, and
 protocol identifiers, but contains no credentials. This is currently runtime separation, not yet
 separate packaging; see [project-policy boundary](docs/project-policy-boundary.md).
@@ -44,7 +44,8 @@ separate packaging; see [project-policy boundary](docs/project-policy-boundary.m
 ## Workflow
 
 1. Open **OMP Sessions** from the activity bar.
-2. Type into the bottom composer and send. The prompt creates one isolated session.
+2. Type into the bottom composer and send. The prompt creates one isolated session. Pasted PNG,
+   JPEG, WebP, and GIF screenshots appear as removable previews and travel with the exact prompt.
 3. Same sidebar becomes selected conversation; Back returns to chat list without stopping that
    session. Final answers remain in transcript; advisor, tool, reasoning, runtime, and subagent
    activity folds into one closed activity row unless it is an error or operator decision.
@@ -146,6 +147,7 @@ RPC protocol v2 and preserves:
   retries, compaction, TTSR, todos, and subagent progress;
 - slash-command discovery;
 - send, steer, follow-up, and abort;
+- clipboard screenshot attachments on first prompts, normal prompts, steering, and follow-ups;
 - OMP extension confirmations, selections, and editor input;
 - model, effort, context, queue, worktree, and parity state.
 
@@ -207,7 +209,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.5.0.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.5.1.vsix --force
 ```
 
 ## Current boundary
