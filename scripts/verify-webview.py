@@ -230,6 +230,14 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     assert "images" not in page.evaluate(
         "() => JSON.parse(sessionStorage.getItem('omp-shared-view-state'))"
     ), f"{name} serialized screenshot bytes into per-keystroke webview state"
+    dispatch_frame(
+        page,
+        {"type": "setComposer", "text": "text-only editor update"},
+    )
+    assert page.locator("#composer-input").input_value() == "text-only editor update"
+    assert page.locator(".attachment-chip").count() == 1, (
+        f"{name} text-only setComposer discarded screenshot attachments"
+    )
     image_data = assert_attachment_race_and_typing_stability(page, name)
     page.locator("#composer-input").fill("send button regression proof")
     page.screenshot(

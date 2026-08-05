@@ -391,8 +391,10 @@ function receiveHostMessage(raw: unknown): void {
       return;
     case "setComposer":
       composer.value = String(raw.text ?? "");
-      attachmentEpoch += 1;
-      replaceAttachments(parsePromptImages(raw.images) ?? []);
+      if (Object.prototype.hasOwnProperty.call(raw, "images")) {
+        attachmentEpoch += 1;
+        replaceAttachments(parsePromptImages(raw.images) ?? []);
+      }
       persistComposer();
       resizeComposer();
       renderComposer();
