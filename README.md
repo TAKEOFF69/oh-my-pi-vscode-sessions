@@ -36,7 +36,7 @@ Generic OMP sessions do not require Dzialkopedia or another private repository. 
 RPC transport, single-sidebar presentation, session lifecycle, process reaping, writer leases, and
 editor context. Unverified generic sessions are labelled `Custom access`.
 
-Version 2.6.0 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
+Version 2.6.1 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
 Git origin and is fail-closed. Adapter source exposes repository identity, control-file names, and
 protocol identifiers, but contains no credentials. This is currently runtime separation, not yet
 separate packaging; see [project-policy boundary](docs/project-policy-boundary.md).
@@ -84,8 +84,10 @@ result returns as report plus reviewable local patch and never auto-applies.
 Loop workers continue through canonical Loop dispatch only.
 
 The rule is **one writing session per worktree**, not one VS Code window per
-worktree. Atomic leases under shared Git directory enforce this across chats,
-windows, and extension-host restarts; stale process owners are recovered. If
+worktree. Immutable per-writer lease tokens under shared Git directory enforce this across chats,
+windows, and extension-host restarts; dead process tokens are recovered without deleting a
+replacement owner's lease. A dead mutable lease written by 2.6.0 remains fail-closed until all
+2.6.0 extension hosts are closed and manual diagnostic cleanup proves its PID is gone. If
 submitting first prompt in Dzialkopedia, extension prepares a fresh isolated worktree from
 `origin/main` through
 extension-owned Git operations, validates canonical Dzialkopedia adapter before
@@ -219,7 +221,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.6.0.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.6.1.vsix --force
 ```
 
 ## Current boundary
