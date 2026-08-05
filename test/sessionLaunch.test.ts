@@ -31,6 +31,7 @@ test("work RPC launch uses repository launcher and exact parity", () => {
   assert.equal(plan.parity?.modelId, "claude-opus-5");
   assert.equal(plan.parity?.thinkingLevel, "xhigh");
   assert.ok(plan.parity?.requiredTools.includes("edit"));
+  assert.ok(plan.parity?.requiredTools.includes("blackbull_codex"));
   assert.ok(plan.parity?.allowedTools?.includes("hub"));
   assert.ok(!plan.parity?.allowedTools?.includes("loop_control"));
   assert.ok(plan.parity?.allowedTools?.includes("loop_handoff"));
@@ -83,6 +84,7 @@ test("Loop RPC launch leaves initial prompt to host after parity", () => {
   ]);
   assert.equal(plan.initialPrompt, "/loop-start consumer-share");
   assert.ok(plan.parity?.requiredTools.includes("loop_control"));
+  assert.ok(!plan.parity?.allowedTools?.includes("blackbull_codex"));
   assert.ok(plan.parity?.forbiddenTools.includes("bash"));
   assert.deepEqual(plan.parity?.allowedTools, [
     "read",

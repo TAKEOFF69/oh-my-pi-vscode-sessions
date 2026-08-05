@@ -123,6 +123,7 @@ ID `R_kgDORpREFA`, so a future holder of either username cannot satisfy canonica
 | Skills and slash commands | Available-command menu + normal prompt path |
 | Advisor advice | Folded activity; final answer remains primary conversation |
 | Steering/follow-up/abort | Composer controls |
+| Prompt images | Clipboard previews forwarded as bounded OMP `ImageContent[]` |
 | Compaction/retry/TTSR | Folded activity; failures visible |
 | Todos | Folded activity |
 | Subagents | Folded lifecycle/progress summary |
@@ -153,6 +154,8 @@ it can revert unrelated changes under parallel worktree activity.
   initial prompt is host-driven.
 - Webview reducer tests cover streaming, tool progress, notices, folded advisor activity, and UI requests.
 - Static webview browser pass covers desktop and narrow sidebar widths.
+- Browser pass pastes a real PNG into home and active composers, verifies preview/remove state,
+  and asserts exact first-prompt and RPC image payloads.
 - RPC lifecycle fixture launches real child processes, renders canonical frames through reducers,
   round-trips confirmation, steers, aborts, and keeps two processes independently addressable.
 - Pre-parity extension UI requests are cancelled without opening URLs, editors, or dialogs.

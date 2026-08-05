@@ -10,7 +10,20 @@ import {
 test("sidebar bridge accepts one bounded first prompt and session focus", () => {
   assert.deepEqual(
     parseSidebarWebviewMessage({ type: "createSession", prompt: "  Inspect RCN  " }),
-    { type: "createSession", prompt: "  Inspect RCN  " },
+    { type: "createSession", prompt: "  Inspect RCN  ", images: [] },
+  );
+  const image = {
+    type: "image",
+    mimeType: "image/png",
+    data: "iVBORw==",
+  } as const;
+  assert.deepEqual(
+    parseSidebarWebviewMessage({
+      type: "createSession",
+      prompt: "Inspect screenshot",
+      images: [image],
+    }),
+    { type: "createSession", prompt: "Inspect screenshot", images: [image] },
   );
   assert.deepEqual(
     parseSidebarWebviewMessage({ type: "focusSession", id: "session-1" }),

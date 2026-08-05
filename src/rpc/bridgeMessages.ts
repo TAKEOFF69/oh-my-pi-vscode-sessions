@@ -1,9 +1,20 @@
+import {
+  parsePromptImages,
+  promptFrameFits,
+  type PromptImage,
+} from "../promptImages";
+
 const MAX_PROMPT_BYTES = 1024 * 1024;
 
 export type RpcWebviewMessage =
   | { type: "ready" }
   | { type: "draftChanged"; draft: string }
-  | { type: "prompt" | "steer" | "follow_up"; message: string }
+  | { type: "attachmentsChanged"; images: PromptImage[] }
+  | {
+      type: "prompt" | "steer" | "follow_up";
+      message: string;
+      images: PromptImage[];
+    }
   | { type: "abort" }
   | {
       type: "extensionUiResponse";
@@ -43,14 +54,21 @@ export function parseRpcWebviewMessage(
     case "prompt":
     case "steer":
     case "follow_up": {
+      const images = parsePromptImages(raw.images);
       if (
         typeof raw.message !== "string" ||
         !raw.message.trim() ||
-        Buffer.byteLength(raw.message, "utf8") > MAX_PROMPT_BYTES
+        Buffer.byteLength(raw.message, "utf8") > MAX_PROMPT_BYTES ||
+        images === null ||
+        !promptFrameFits(raw.message, images)
       ) {
         return null;
       }
-      return { type: raw.type, message: raw.message };
+      return { type: raw.type, message: raw.message, images };
+    }
+    case "attachmentsChanged": {
+      const images = parsePromptImages(raw.images);
+      return images === null ? null : { type: "attachmentsChanged", images };
     }
     case "draftChanged":
       return typeof raw.draft === "string" &&

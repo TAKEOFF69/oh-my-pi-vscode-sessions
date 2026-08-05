@@ -1,9 +1,16 @@
+import {
+  parsePromptImages,
+  promptFrameFits,
+  type PromptImage,
+} from "../promptImages";
+
 const MAX_PROMPT_BYTES = 1024 * 1024;
 
 export type SidebarWebviewMessage =
   | { type: "ready" }
-  | { type: "createSession"; prompt: string }
+  | { type: "createSession"; prompt: string; images: PromptImage[] }
   | { type: "draftChanged"; draft: string }
+  | { type: "attachmentsChanged"; images: PromptImage[] }
   | { type: "focusSession"; id: string }
   | { type: "showLogs" }
   | { type: "openSettings" };
@@ -66,9 +73,17 @@ export function parseSidebarWebviewMessage(
       return { type: raw.type };
     case "createSession": {
       const prompt = typeof raw.prompt === "string" ? raw.prompt : "";
-      return prompt.trim() && Buffer.byteLength(prompt, "utf8") <= MAX_PROMPT_BYTES
-        ? { type: "createSession", prompt }
+      const images = parsePromptImages(raw.images);
+      return prompt.trim() &&
+        Buffer.byteLength(prompt, "utf8") <= MAX_PROMPT_BYTES &&
+        images !== null &&
+        promptFrameFits(prompt, images)
+        ? { type: "createSession", prompt, images }
         : null;
+    }
+    case "attachmentsChanged": {
+      const images = parsePromptImages(raw.images);
+      return images === null ? null : { type: "attachmentsChanged", images };
     }
     case "draftChanged":
       return typeof raw.draft === "string" &&

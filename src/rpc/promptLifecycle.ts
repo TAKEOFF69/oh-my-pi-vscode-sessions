@@ -1,9 +1,15 @@
+import type { PromptDraft, PromptImage } from "../promptImages";
+
 export class PromptLifecycle {
-  readonly #drafts = new Map<string, string>();
+  readonly #drafts = new Map<string, PromptDraft>();
   readonly #order: string[] = [];
 
-  begin(id: string, draft: string): void {
-    this.#drafts.set(id, draft);
+  begin(
+    id: string,
+    message: string,
+    images: readonly PromptImage[] = [],
+  ): void {
+    this.#drafts.set(id, { message, images: [...images] });
     this.#order.push(id);
   }
 
@@ -11,7 +17,7 @@ export class PromptLifecycle {
     return this.#drafts.has(id);
   }
 
-  fail(id: string): string | undefined {
+  fail(id: string): PromptDraft | undefined {
     const draft = this.#drafts.get(id);
     this.#remove(id);
     return draft;
@@ -36,10 +42,10 @@ export class PromptLifecycle {
     this.#order.length = 0;
   }
 
-  drain(): string[] {
+  drain(): PromptDraft[] {
     const drafts = this.#order
       .map((id) => this.#drafts.get(id))
-      .filter((draft): draft is string => draft !== undefined);
+      .filter((draft): draft is PromptDraft => draft !== undefined);
     this.clear();
     return drafts;
   }

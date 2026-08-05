@@ -1,5 +1,14 @@
 import MarkdownIt from "markdown-it";
 
+import { pastedImageFiles, preparePromptImage } from "../imagePaste";
+import {
+  decodedBase64Bytes,
+  MAX_PROMPT_IMAGES,
+  MAX_PROMPT_IMAGE_BYTES,
+  parsePromptImages,
+  promptFrameFits,
+  type PromptImage,
+} from "../promptImages";
 import "./webview.css";
 
 type WindowWithFind = Window & {
@@ -28,6 +37,7 @@ import {
 
 type VsCodeState = {
   draft?: string;
+  images?: PromptImage[];
 };
 
 type VsCodeApi = {
@@ -116,6 +126,8 @@ root.innerHTML = `
             <button type="button" data-composer-action="logs">Show OMP logs</button>
             <button type="button" data-composer-action="terminal">Open diagnostic terminal</button>
           </div>
+          <div id="attachment-error" class="attachment-error" role="status" hidden></div>
+          <div id="attachment-strip" class="attachment-strip" aria-label="Attached screenshots" hidden></div>
           <label class="sr-only" for="composer-input">Message OMP</label>
           <textarea
             id="composer-input"
@@ -152,6 +164,8 @@ root.innerHTML = `
 const stream = requireElement("stream");
 const streamInner = requireElement("stream-inner");
 const composer = requireTextArea("composer-input");
+const attachmentStrip = requireElement("attachment-strip");
+const attachmentError = requireElement("attachment-error");
 const sendButton = requireButton("send-button");
 const steerButton = requireButton("steer-button");
 const followButton = requireButton("follow-button");
@@ -166,7 +180,9 @@ const requestLayer = requireElement("request-layer");
 const searchBox = requireElement("search-box");
 const searchInput = requireInput("search-input");
 
-composer.value = vscode.getState()?.draft ?? "";
+const restoredComposer = vscode.getState();
+composer.value = restoredComposer?.draft ?? "";
+let attachments = parsePromptImages(restoredComposer?.images) ?? [];
 resizeComposer();
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
@@ -192,11 +208,18 @@ stream.addEventListener(
   true,
 );
 composer.addEventListener("input", () => {
-  vscode.setState({ draft: composer.value });
+  attachmentError.hidden = true;
+  persistComposer();
   post({ type: "draftChanged", draft: composer.value });
   resizeComposer();
   renderCommandMenu();
   renderComposer();
+});
+composer.addEventListener("paste", (event) => {
+  const files = pastedImageFiles(event);
+  if (files.length === 0) return;
+  event.preventDefault();
+  void attachImages(files);
 });
 composer.addEventListener("keydown", (event) => {
   const commandsVisible = !commandMenu.hidden;
@@ -364,18 +387,21 @@ function receiveHostMessage(raw: unknown): void {
       return;
     case "setComposer":
       composer.value = String(raw.text ?? "");
-      vscode.setState({ draft: composer.value });
+      attachments = parsePromptImages(raw.images) ?? [];
+      persistComposer();
       resizeComposer();
       renderComposer();
       composer.focus();
       return;
     case "restoreDraft": {
       const restored = String(raw.text ?? "").trim();
+      const restoredImages = parsePromptImages(raw.images) ?? [];
       if (restored) {
         composer.value = composer.value.trim()
           ? `${restored}\n\n${composer.value}`
           : restored;
-        vscode.setState({ draft: composer.value });
+        attachments = mergePromptImages(restoredImages, attachments);
+        persistComposer();
         resizeComposer();
         renderComposer();
         composer.focus();
@@ -825,6 +851,7 @@ function renderExtensionSurfaces(): string {
 }
 
 function renderComposer(): void {
+  renderAttachments();
   const blocked =
     state.runtime.transport === "failed" ||
     state.runtime.transport === "exited" ||
@@ -1001,7 +1028,7 @@ function chooseCommand(index: number): void {
     return;
   }
   composer.value = `/${command.name.replace(/^\//, "")} `;
-  vscode.setState({ draft: composer.value });
+  persistComposer();
   commandMenu.hidden = true;
   resizeComposer();
   renderComposer();
@@ -1013,10 +1040,20 @@ function submit(type: "prompt" | "steer" | "follow_up"): void {
   if (!message || !promptReady()) {
     return;
   }
-  post({ type, message });
+  const images = attachments;
+  if (!promptFrameFits(message, images)) {
+    attachmentError.textContent =
+      "Message and screenshots exceed OMP's safe RPC input limit.";
+    attachmentError.hidden = false;
+    return;
+  }
+  attachmentError.hidden = true;
+  post({ type, message, images });
   composer.value = "";
-  vscode.setState({ draft: "" });
+  attachments = [];
+  persistComposer();
   post({ type: "draftChanged", draft: "" });
+  post({ type: "attachmentsChanged", images: [] });
   resizeComposer();
   commandMenu.hidden = true;
   renderComposer();
@@ -1030,10 +1067,83 @@ function insertText(text: string): void {
     composer.value.slice(0, start) + text + composer.value.slice(end);
   const caret = start + text.length;
   composer.setSelectionRange(caret, caret);
-  vscode.setState({ draft: composer.value });
+  persistComposer();
   resizeComposer();
   renderComposer();
   composer.focus();
+}
+
+async function attachImages(files: readonly File[]): Promise<void> {
+  try {
+    let nextAttachments = attachments;
+    for (const file of files) {
+      if (nextAttachments.length >= MAX_PROMPT_IMAGES) {
+        throw new Error(`Attach at most ${MAX_PROMPT_IMAGES} screenshots.`);
+      }
+      const used = nextAttachments.reduce(
+        (total, image) => total + (decodedBase64Bytes(image.data) ?? 0),
+        0,
+      );
+      const image = await preparePromptImage(
+        file,
+        MAX_PROMPT_IMAGE_BYTES - used,
+      );
+      nextAttachments = [...nextAttachments, image];
+    }
+    attachments = nextAttachments;
+    attachmentError.hidden = true;
+    persistComposer();
+    post({ type: "attachmentsChanged", images: attachments });
+    renderComposer();
+  } catch (error) {
+    attachmentError.textContent =
+      error instanceof Error ? error.message : String(error);
+    attachmentError.hidden = false;
+  }
+}
+
+function renderAttachments(): void {
+  attachmentStrip.replaceChildren();
+  attachmentStrip.hidden = attachments.length === 0;
+  attachments.forEach((image, index) => {
+    const item = document.createElement("div");
+    item.className = "attachment-chip";
+    const preview = document.createElement("img");
+    preview.src = `data:${image.mimeType};base64,${image.data}`;
+    preview.alt = `Screenshot ${index + 1}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "attachment-remove";
+    remove.title = `Remove screenshot ${index + 1}`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.textContent = "\u00d7";
+    remove.addEventListener("click", () => {
+      attachments = attachments.filter((_, itemIndex) => itemIndex !== index);
+      attachmentError.hidden = true;
+      persistComposer();
+      post({ type: "attachmentsChanged", images: attachments });
+      renderComposer();
+      composer.focus();
+    });
+    item.append(preview, remove);
+    attachmentStrip.append(item);
+  });
+}
+
+function persistComposer(): void {
+  vscode.setState({ draft: composer.value, images: attachments });
+}
+
+function mergePromptImages(
+  ...groups: readonly PromptImage[][]
+): PromptImage[] {
+  let merged: PromptImage[] = [];
+  for (const image of groups.flat()) {
+    const next = parsePromptImages([...merged, image]);
+    if (next === null) break;
+    merged = next;
+  }
+  return merged;
 }
 
 function resizeComposer(): void {

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 
 import type { SessionLogger } from "../logging";
+import type { PromptImage } from "../promptImages";
 import type { RpcParityProfile } from "../rpc/parity";
 import { RpcSessionHost } from "../rpc/RpcSessionHost";
 import { TerminalSessionHost } from "../terminal/TerminalSessionHost";
@@ -31,6 +32,7 @@ export type SessionSpec = {
   executable: string;
   args: readonly string[];
   initialPrompt?: string;
+  initialImages?: readonly PromptImage[];
   resumeSessionFile?: string;
   titleSource?: SessionTitleSource;
   updatedAt?: number;
@@ -94,6 +96,7 @@ export class SessionPanel implements vscode.Disposable {
         executable: spec.executable,
         args: spec.args,
         initialPrompt: spec.initialPrompt,
+        initialImages: spec.initialImages,
         resumeSessionFile: spec.resumeSessionFile,
         parity: spec.parity,
         logger,

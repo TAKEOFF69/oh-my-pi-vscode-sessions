@@ -26,6 +26,7 @@ worktree or starts OMP.
 | Conversation | Text-first, narrow readable column, little permanent chrome | Remove avatar/model repetition; keep one final assistant answer per user turn | shared-with-functional-overrides |
 | Tool activity | Compact action rows; detail only on demand | One closed activity disclosure with expandable result | shared-identical |
 | Composer | Rounded bordered field docked near bottom | Rounded composer with message field and bottom control row | shared-identical |
+| Screenshot paste | Clipboard image appears as removable composer preview | Resize within RPC input budget and forward canonical OMP `ImageContent[]` with prompt | shared-with-runtime-guard |
 | Composer left controls | Plus action and access state | Plus menu for logs/diagnostic terminal/find; exact Dzialki policy label or honest generic `Custom access` | shared-with-functional-overrides |
 | Composer right controls | Model label and circular send/stop button | Live OMP model/effort label and circular send/stop control | shared-identical |
 | Local context footer | `Work locally` row | Branch/worktree row below composer | shared-with-real-data |
@@ -67,12 +68,12 @@ fact. Test harness values remain fixtures only.
   button, no horizontal overflow, and no visible branch/worktree as session title.
 - Opening/focusing sidebar creates zero worktrees and zero OMP processes. One first-prompt submit
   creates exactly one session; double submit joins/ignores same in-flight creation; failure restores
-  exact draft.
+  exact text and screenshot attachments.
 - Provisional title is prompt-derived and branch/path-shaped runtime titles never replace it.
 - Closing/reloading retains at most 50 extension-created recent descriptors without starting OMP;
   clicking a live row focuses it and clicking a dormant row resumes exact stored session/worktree.
-- Composer remains keyboard-operable; action menu, search, tool expansion, send, steer/follow-up,
-  abort, requests, and editor-context insertion remain functional.
+- Composer remains keyboard-operable; screenshot paste/remove, action menu, search, tool expansion,
+  send, steer/follow-up, abort, requests, and editor-context insertion remain functional.
 - Startup drafts cannot submit before transport/parity readiness, and request-card input survives
   unrelated RPC frames.
 - Streaming updates patch changed message nodes instead of rebuilding full history; expanded tool

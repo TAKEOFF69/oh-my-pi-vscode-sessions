@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI can run manually and verifies RPC parity plus native package creation on Windows, macOS,
   and Linux.
 
+## [2.5.1] - 2026-08-05
+
+### Added
+
+- Paste screenshots directly into both new-chat and active-chat composers. Images are previewed,
+  removable, resized within OMP's unchunked RPC input budget, and restored with failed drafts.
+
+### Fixed
+
+- Dzialkopedia work-session parity now includes the repository-owned `blackbull_codex` tool while
+  keeping it absent from read-only and Loop profiles.
+- Stale Dzialkopedia adapter failures now explain that a fresh New Chat is the recovery path.
+
 ## [2.5.0] - 2026-08-05
 
 ### Changed
