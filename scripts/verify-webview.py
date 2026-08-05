@@ -172,6 +172,9 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     dispatch_frame(page, {"type": "transport", "status": "ready"})
     image_data = paste_screenshot(page)
     page.locator(".attachment-chip").wait_for()
+    assert "images" not in page.evaluate(
+        "() => JSON.parse(sessionStorage.getItem('omp-shared-view-state'))"
+    ), f"{name} serialized screenshot bytes into per-keystroke webview state"
     page.locator(".attachment-remove").click()
     assert page.locator(".attachment-chip").count() == 0
     image_data = paste_screenshot(page)

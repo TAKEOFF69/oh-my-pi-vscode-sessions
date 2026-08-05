@@ -37,7 +37,6 @@ import {
 
 type VsCodeState = {
   draft?: string;
-  images?: PromptImage[];
 };
 
 type VsCodeApi = {
@@ -182,7 +181,9 @@ const searchInput = requireInput("search-input");
 
 const restoredComposer = vscode.getState();
 composer.value = restoredComposer?.draft ?? "";
-let attachments = parsePromptImages(restoredComposer?.images) ?? [];
+let attachments: PromptImage[] = [];
+let pendingImagePastes = 0;
+let imagePasteQueue = Promise.resolve();
 resizeComposer();
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
@@ -219,7 +220,7 @@ composer.addEventListener("paste", (event) => {
   const files = pastedImageFiles(event);
   if (files.length === 0) return;
   event.preventDefault();
-  void attachImages(files);
+  queueImagePaste(files);
 });
 composer.addEventListener("keydown", (event) => {
   const commandsVisible = !commandMenu.hidden;
@@ -857,17 +858,21 @@ function renderComposer(): void {
     state.runtime.transport === "exited" ||
     state.runtime.parity === "failed";
   const ready = promptReady();
+  const preparingImage = pendingImagePastes > 0;
   composer.disabled = blocked;
-  sendButton.disabled = blocked || !ready || !composer.value.trim();
+  sendButton.disabled =
+    blocked || preparingImage || !ready || !composer.value.trim();
   const streaming = state.runtime.isStreaming;
   sendButton.hidden = streaming;
   steerButton.hidden = !streaming;
   followButton.hidden = !streaming;
   abortButton.hidden = !streaming;
-  steerButton.disabled = !ready || !composer.value.trim();
-  followButton.disabled = !ready || !composer.value.trim();
+  steerButton.disabled = preparingImage || !ready || !composer.value.trim();
+  followButton.disabled = preparingImage || !ready || !composer.value.trim();
   requireElement("composer-status").textContent = blocked
     ? "Session blocked"
+    : preparingImage
+      ? "Preparing screenshot"
     : state.runtime.transport === "starting"
       ? "Starting OMP"
     : state.runtime.isCompacting
@@ -1037,7 +1042,7 @@ function chooseCommand(index: number): void {
 
 function submit(type: "prompt" | "steer" | "follow_up"): void {
   const message = composer.value.trim();
-  if (!message || !promptReady()) {
+  if (!message || pendingImagePastes > 0 || !promptReady()) {
     return;
   }
   const images = attachments;
@@ -1102,6 +1107,17 @@ async function attachImages(files: readonly File[]): Promise<void> {
   }
 }
 
+function queueImagePaste(files: readonly File[]): void {
+  pendingImagePastes += 1;
+  renderComposer();
+  imagePasteQueue = imagePasteQueue
+    .then(() => attachImages(files))
+    .finally(() => {
+      pendingImagePastes -= 1;
+      renderComposer();
+    });
+}
+
 function renderAttachments(): void {
   attachmentStrip.replaceChildren();
   attachmentStrip.hidden = attachments.length === 0;
@@ -1131,7 +1147,8 @@ function renderAttachments(): void {
 }
 
 function persistComposer(): void {
-  vscode.setState({ draft: composer.value, images: attachments });
+  // Host owns binary attachment state; do not serialize base64 on each keystroke.
+  vscode.setState({ draft: composer.value });
 }
 
 function mergePromptImages(

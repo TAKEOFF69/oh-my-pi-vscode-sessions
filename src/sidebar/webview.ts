@@ -31,7 +31,7 @@ type SidebarState = {
   profile: SidebarProfile;
 };
 
-type VsCodeState = { draft?: string; images?: PromptImage[] };
+type VsCodeState = { draft?: string };
 type VsCodeApi = {
   postMessage(message: unknown): void;
   getState(): VsCodeState | undefined;
@@ -141,7 +141,9 @@ const viewAllButton = requireButton("view-all-button");
 
 const restoredState = vscode.getState();
 composer.value = restoredState?.draft ?? "";
-let attachments = parsePromptImages(restoredState?.images) ?? [];
+let attachments: PromptImage[] = [];
+let pendingImagePastes = 0;
+let imagePasteQueue = Promise.resolve();
 resizeComposer();
 
 window.addEventListener("message", (event: MessageEvent<unknown>) =>
@@ -161,7 +163,7 @@ composer.addEventListener("paste", (event) => {
   const files = pastedImageFiles(event);
   if (files.length === 0) return;
   event.preventDefault();
-  void attachImages(files);
+  queueImagePaste(files);
 });
 composer.addEventListener("keydown", (event) => {
   if (
@@ -291,13 +293,18 @@ function patchSessionRows(): void {
 function renderComposer(): void {
   renderAttachments();
   composer.disabled = state.creating;
-  sendButton.disabled = state.creating || !composer.value.trim();
-  creationStatus.textContent = state.creating ? "Preparing session…" : "";
+  sendButton.disabled =
+    state.creating || pendingImagePastes > 0 || !composer.value.trim();
+  creationStatus.textContent = state.creating
+    ? "Preparing session…"
+    : pendingImagePastes > 0
+      ? "Preparing screenshot…"
+      : "";
 }
 
 function submit(): void {
   const prompt = composer.value;
-  if (!prompt.trim() || state.creating) return;
+  if (!prompt.trim() || state.creating || pendingImagePastes > 0) return;
   if (new TextEncoder().encode(prompt).byteLength > MAX_PROMPT_BYTES) {
     creationError.textContent = "Prompt is too large to start a session.";
     creationError.hidden = false;
@@ -367,6 +374,17 @@ async function attachImages(files: readonly File[]): Promise<void> {
   }
 }
 
+function queueImagePaste(files: readonly File[]): void {
+  pendingImagePastes += 1;
+  renderComposer();
+  imagePasteQueue = imagePasteQueue
+    .then(() => attachImages(files))
+    .finally(() => {
+      pendingImagePastes -= 1;
+      renderComposer();
+    });
+}
+
 function renderAttachments(): void {
   attachmentStrip.replaceChildren();
   attachmentStrip.hidden = attachments.length === 0;
@@ -396,7 +414,8 @@ function renderAttachments(): void {
 }
 
 function persistComposer(): void {
-  vscode.setState({ draft: composer.value, images: attachments });
+  // Host owns binary attachment state; do not serialize base64 on each keystroke.
+  vscode.setState({ draft: composer.value });
 }
 
 function resizeComposer(): void {
