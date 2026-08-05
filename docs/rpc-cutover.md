@@ -166,7 +166,8 @@ it can revert unrelated changes under parallel worktree activity.
   round-trips confirmation, steers, aborts, and keeps two processes independently addressable.
 - Pre-parity extension UI requests are cancelled without opening URLs, editors, or dialogs.
 - Writer-lease fixtures prove repository root, nested folder, and junction paths collide on one
-  lease, released only after the owned process tree exits.
+  ownership key; immutable tokens prevent stale reclaimers from removing a replacement lease and
+  release only after the owned process tree exits.
 - Extension deactivation awaits all session shutdowns. Diagnostic TUI is lease-free/read-only
   only under a trusted project launcher; generic TUI acquires a writer lease, and generic RPC
   read-only fails closed because ambient extension/MCP mutations cannot be excluded.

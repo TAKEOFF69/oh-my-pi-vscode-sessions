@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-08-05
+
+### Fixed
+
+- Writer leases use immutable per-session tokens, preventing simultaneous stale reclaimers from
+  deleting a newly acquired lease or both taking ownership of one worktree.
+- Crash-left token leases are reclaimed without a shared recovery mutex that can itself become
+  orphaned; legacy 2.6 mutable leases remain fail-closed during the upgrade boundary.
+- Missing, unreadable, malformed, or token-mismatched lease inventory now blocks acquisition
+  instead of being mistaken for an unowned worktree.
+
 ## [2.6.0] - 2026-08-05
 
 ### Added

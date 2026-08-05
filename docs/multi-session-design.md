@@ -11,7 +11,7 @@ authentication, model discovery, extensions, skills, and session storage.
 - One sidebar owns home, new-chat composer, recent list, and selected conversation drill-in.
 - Every live chat owns one OMP RPC process and one explicit working directory; normal chats create
   no editor panel.
-- Writing sessions use distinct Git worktrees, enforced by atomic cross-process lease.
+- Writing sessions use distinct Git worktrees, enforced by immutable cross-process lease tokens.
 - Multiple sessions may share a directory only in read-only mode. Read-only sessions
   remove `bash`, `edit`, `write`, and `task` from OMP's enabled tool list.
 - Loop controller session launches repository-owned `npm run omp:loop -- <alias>` profile
@@ -61,7 +61,7 @@ Included:
 - concurrent background RPC sessions with one selected sidebar presentation;
 - single-action active-session sidebar;
 - picker-free current/dedicated-worktree default plus explicit advanced picker;
-- atomic cross-process writer leases with stale-PID recovery;
+- immutable cross-process writer tokens with exact-token release and stale-PID recovery;
 - read-only brainstorming profile;
 - conversation-triggered handoff to repository-owned Loop controller profile;
 - same-repository source-path remapping;
@@ -81,7 +81,8 @@ reimplement agent behavior.
 ## Acceptance checks
 
 - TypeScript strict check passes.
-- Unit tests cover PTY spawning, Git worktree parsing, path remapping, and leases.
+- Unit tests cover PTY spawning, Git worktree parsing, path remapping, simultaneous lease
+  contenders, crash residue, and exact-token release.
 - Production extension bundle builds.
 - VSIX packages without missing runtime assets.
 - Installed extension opens two simultaneous chats bound to different directories without editor panels.
