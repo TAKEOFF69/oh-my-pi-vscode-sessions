@@ -45,6 +45,61 @@ def paste_screenshot(page) -> str:
     )
 
 
+def delay_image_decode(page, milliseconds: int = 250) -> None:
+    page.evaluate(
+        """(delay) => {
+          window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__ ??= window.createImageBitmap;
+          window.createImageBitmap = async (...args) => {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            return window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__(...args);
+          };
+        }""",
+        milliseconds,
+    )
+
+
+def restore_image_decode(page) -> None:
+    page.evaluate(
+        """() => {
+          if (window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__) {
+            window.createImageBitmap = window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__;
+            delete window.__OMP_ORIGINAL_CREATE_IMAGE_BITMAP__;
+          }
+        }"""
+    )
+
+
+def assert_attachment_race_and_typing_stability(page, name: str) -> str:
+    delay_image_decode(page)
+    image_data = paste_screenshot(page)
+    assert page.locator("#send-button").is_disabled(), (
+        f"{name} send button enabled while screenshot preparation was pending"
+    )
+    page.locator(".attachment-remove").first.evaluate("(button) => button.click()")
+    assert page.locator(".attachment-chip").count() == 0, (
+        f"{name} did not remove the existing screenshot before decode completed"
+    )
+    page.locator(".attachment-chip").first.wait_for()
+    page.wait_for_timeout(350)
+    restore_image_decode(page)
+    assert page.locator(".attachment-chip").count() == 1, (
+        f"{name} resurrected a removed screenshot during concurrent paste"
+    )
+    stable = page.evaluate(
+        """() => {
+          const preview = document.querySelector('.attachment-chip img');
+          const composer = document.querySelector('#composer-input');
+          for (let index = 0; index < 200; index += 1) {
+            composer.value = `typing stability ${index}`;
+            composer.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          return preview === document.querySelector('.attachment-chip img');
+        }"""
+    )
+    assert stable, f"{name} rebuilt screenshot previews while typing"
+    return image_data
+
+
 def verify_view(page, name: str, *, empty: bool = False) -> Path:
     errors: list[str] = []
     page.on(
@@ -175,10 +230,8 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
     assert "images" not in page.evaluate(
         "() => JSON.parse(sessionStorage.getItem('omp-shared-view-state'))"
     ), f"{name} serialized screenshot bytes into per-keystroke webview state"
-    page.locator(".attachment-remove").click()
-    assert page.locator(".attachment-chip").count() == 0
-    image_data = paste_screenshot(page)
-    page.locator(".attachment-chip").wait_for()
+    image_data = assert_attachment_race_and_typing_stability(page, name)
+    page.locator("#composer-input").fill("send button regression proof")
     page.screenshot(
         path=str(OUTPUT / f"rpc-webview-{name}-attachment.png"),
         full_page=True,
@@ -407,6 +460,9 @@ def verify_sidebar(browser, width: int, height: int, name: str) -> tuple[Path, f
     composer = page.locator("#composer-input")
     image_data = paste_screenshot(page)
     page.locator(".attachment-chip").wait_for()
+    image_data = assert_attachment_race_and_typing_stability(
+        page, f"sidebar {name}"
+    )
     page.screenshot(
         path=str(OUTPUT / f"sidebar-{name}-attachment.png"),
         full_page=True,

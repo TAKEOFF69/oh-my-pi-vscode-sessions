@@ -142,6 +142,9 @@ const viewAllButton = requireButton("view-all-button");
 const restoredState = vscode.getState();
 composer.value = restoredState?.draft ?? "";
 let attachments: PromptImage[] = [];
+let attachmentRevision = 0;
+let renderedAttachmentRevision = -1;
+let attachmentEpoch = 0;
 let pendingImagePastes = 0;
 let imagePasteQueue = Promise.resolve();
 resizeComposer();
@@ -208,13 +211,15 @@ function receiveHostMessage(raw: unknown): void {
     newDraft(raw.clear === true);
   } else if (raw.type === "setDraft") {
     composer.value = typeof raw.draft === "string" ? raw.draft : "";
-    attachments = parsePromptImages(raw.images) ?? [];
+    attachmentEpoch += 1;
+    replaceAttachments(parsePromptImages(raw.images) ?? []);
     persistComposer();
     resizeComposer();
     renderComposer();
   } else if (raw.type === "sessionCreated") {
     composer.value = "";
-    attachments = [];
+    attachmentEpoch += 1;
+    replaceAttachments([]);
     persistComposer();
     post({ type: "draftChanged", draft: "" });
     post({ type: "attachmentsChanged", images: [] });
@@ -227,7 +232,10 @@ function receiveHostMessage(raw: unknown): void {
     if (draft) {
       composer.value = draft;
     }
-    if (images) attachments = images;
+    if (images) {
+      attachmentEpoch += 1;
+      replaceAttachments(images);
+    }
     persistComposer();
     creationError.textContent =
       typeof raw.detail === "string" ? raw.detail : "Session was not created.";
@@ -320,7 +328,8 @@ function submit(): void {
   state = { ...state, creating: true };
   composer.value = "";
   const images = attachments;
-  attachments = [];
+  attachmentEpoch += 1;
+  replaceAttachments([]);
   persistComposer();
   resizeComposer();
   renderComposer();
@@ -335,7 +344,8 @@ function toggleExpanded(): void {
 function newDraft(clear: boolean): void {
   if (clear && !state.creating) {
     composer.value = "";
-    attachments = [];
+    attachmentEpoch += 1;
+    replaceAttachments([]);
     persistComposer();
     creationError.hidden = true;
     post({ type: "attachmentsChanged", images: [] });
@@ -345,14 +355,17 @@ function newDraft(clear: boolean): void {
   composer.focus();
 }
 
-async function attachImages(files: readonly File[]): Promise<void> {
+async function attachImages(
+  files: readonly File[],
+  queuedEpoch: number,
+): Promise<void> {
   try {
-    let nextAttachments = attachments;
     for (const file of files) {
-      if (nextAttachments.length >= MAX_PROMPT_IMAGES) {
+      if (queuedEpoch !== attachmentEpoch) return;
+      if (attachments.length >= MAX_PROMPT_IMAGES) {
         throw new Error(`Attach at most ${MAX_PROMPT_IMAGES} screenshots.`);
       }
-      const used = nextAttachments.reduce(
+      const used = attachments.reduce(
         (total, image) => total + (decodedBase64Bytes(image.data) ?? 0),
         0,
       );
@@ -360,13 +373,17 @@ async function attachImages(files: readonly File[]): Promise<void> {
         file,
         MAX_PROMPT_IMAGE_BYTES - used,
       );
-      nextAttachments = [...nextAttachments, image];
+      if (queuedEpoch !== attachmentEpoch) return;
+      const nextAttachments = parsePromptImages([...attachments, image]);
+      if (nextAttachments === null) {
+        throw new Error("Screenshot attachment limit reached.");
+      }
+      replaceAttachments(nextAttachments);
+      creationError.hidden = true;
+      persistComposer();
+      post({ type: "attachmentsChanged", images: attachments });
+      renderComposer();
     }
-    attachments = nextAttachments;
-    creationError.hidden = true;
-    persistComposer();
-    post({ type: "attachmentsChanged", images: attachments });
-    renderComposer();
   } catch (error) {
     creationError.textContent =
       error instanceof Error ? error.message : String(error);
@@ -376,9 +393,10 @@ async function attachImages(files: readonly File[]): Promise<void> {
 
 function queueImagePaste(files: readonly File[]): void {
   pendingImagePastes += 1;
+  const queuedEpoch = attachmentEpoch;
   renderComposer();
   imagePasteQueue = imagePasteQueue
-    .then(() => attachImages(files))
+    .then(() => attachImages(files, queuedEpoch))
     .finally(() => {
       pendingImagePastes -= 1;
       renderComposer();
@@ -386,6 +404,8 @@ function queueImagePaste(files: readonly File[]): void {
 }
 
 function renderAttachments(): void {
+  if (renderedAttachmentRevision === attachmentRevision) return;
+  renderedAttachmentRevision = attachmentRevision;
   attachmentStrip.replaceChildren();
   attachmentStrip.hidden = attachments.length === 0;
   attachments.forEach((image, index) => {
@@ -401,7 +421,9 @@ function renderAttachments(): void {
     remove.setAttribute("aria-label", remove.title);
     remove.textContent = "\u00d7";
     remove.addEventListener("click", () => {
-      attachments = attachments.filter((_, itemIndex) => itemIndex !== index);
+      replaceAttachments(
+        attachments.filter((_, itemIndex) => itemIndex !== index),
+      );
       creationError.hidden = true;
       persistComposer();
       post({ type: "attachmentsChanged", images: attachments });
@@ -416,6 +438,11 @@ function renderAttachments(): void {
 function persistComposer(): void {
   // Host owns binary attachment state; do not serialize base64 on each keystroke.
   vscode.setState({ draft: composer.value });
+}
+
+function replaceAttachments(images: readonly PromptImage[]): void {
+  attachments = [...images];
+  attachmentRevision += 1;
 }
 
 function resizeComposer(): void {
