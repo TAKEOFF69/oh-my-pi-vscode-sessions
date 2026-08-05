@@ -11,6 +11,15 @@ const LOW_SIGNAL = new Set([
   "look at this",
   "please continue",
   "test",
+  "tl;dr",
+  "tldr",
+  "context",
+  "task",
+  "goal",
+  "background",
+  "summary",
+  "status",
+  "update",
   "what do you think",
 ]);
 
@@ -29,7 +38,7 @@ export function deriveSessionTitle(prompt: string): string {
     .replace(/[`*_#>]/g, " ")
     .split(/(?:[.!?]+\s+)|(?:\r?\n)+/)
     .map(cleanCandidate)
-    .filter(Boolean);
+    .filter((candidate) => candidate && !isHeadingOnly(candidate));
   const intent = candidates.join(" ").toLowerCase();
   if (
     /\b(?:first|test(?:ing)?)\b.*\bomp\b.*\bsessions?\b/.test(intent) ||
@@ -50,10 +59,14 @@ export function normalizeRuntimeSessionTitle(
   cwd?: string,
 ): string | undefined {
   const title = truncateTitle(value.replace(/\s+/g, " ").trim());
-  if (!title || infrastructureTitle(title, branch, cwd)) {
+  if (!title || isHeadingOnly(title) || infrastructureTitle(title, branch, cwd)) {
     return undefined;
   }
   return title;
+}
+
+function isHeadingOnly(value: string): boolean {
+  return LOW_SIGNAL.has(value.toLowerCase().replace(/[:\s]+$/g, "").trim());
 }
 
 export function shouldAcceptSessionTitle(

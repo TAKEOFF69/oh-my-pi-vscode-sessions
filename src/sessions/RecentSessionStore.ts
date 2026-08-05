@@ -69,6 +69,19 @@ export class RecentSessionStore {
       .then(() => Promise.resolve(this.#memento.update(STORAGE_KEY, next)));
   }
 
+  pruneUnavailable(pathExists: (candidate: string) => boolean): string[] {
+    const removed = this.#records
+      .filter((record) => !pathExists(record.cwd) || !pathExists(record.sessionFile))
+      .map((record) => record.id);
+    if (removed.length === 0) return [];
+    const removedSet = new Set(removed);
+    this.#records = this.#records.filter((record) => !removedSet.has(record.id));
+    this.#writeQueue = this.#writeQueue
+      .catch(() => undefined)
+      .then(() => Promise.resolve(this.#memento.update(STORAGE_KEY, this.#records)));
+    return removed;
+  }
+
   flush(): Promise<void> {
     return this.#writeQueue;
   }

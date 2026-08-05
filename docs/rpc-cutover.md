@@ -86,6 +86,12 @@ Project launch profiles may attach a parity contract. Dzialkopedia requires:
 Repository preflight remains responsible for authenticated model catalog, advisor role and
 tuning, task isolation, no-fallback policy, branch/worktree state, and canonical adapter bytes.
 RPC runtime parity verifies the state that actually started after that preflight.
+Because OMP `get_state` omits advisor state, trusted sessions issue hidden local `/advisor status`
+probes before first prompt and after terminal turns. Exact running
+`openai-codex/gpt-5.6-sol` identity is required; command output never enters conversation.
+Probes are single-flight and bound to current RPC generation. Restart invalidates old result,
+user prompts wait for an in-flight check, and ambient MCP detection runs before hidden output
+suppression.
 
 OMP `get_state` does not currently echo process cwd. Cwd parity therefore binds the exact
 host-selected spawn directory and repository launcher path; model, thinking, and tool parity
@@ -167,5 +173,5 @@ it can revert unrelated changes under parallel worktree activity.
 - Packaged VSIX contains extension host plus RPC JS/CSS bundles and installs as sole OMP extension.
 - Installed-sidebar activation still requires manual visual confirmation when Windows UI automation
   is unavailable; static browser proof is not mislabeled as native VS Code interaction.
-- Real OMP 17.1.3 smoke proved `anthropic/claude-opus-5` with `xhigh` under extension role overlay.
-  Advisor identity remains configuration-bound because current `get_state` does not expose it.
+- OMP 17.2.9 is minimum trusted runtime. Automated RPC fixture proves exact Opus 5/xhigh parity and
+  hidden live Sol advisor probe; provider-backed installed-sidebar smoke remains release evidence.

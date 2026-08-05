@@ -43,6 +43,8 @@ button { color: inherit; }
 .icon-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.35; }
 
 .chat-list { grid-row: 2; max-height: min(38vh, 370px); overflow: auto; padding: 7px 9px 2px; }
+.runtime-notice { margin: 0 0 7px; padding: 8px; border-left: 2px solid var(--vscode-errorForeground); background: var(--vscode-inputValidation-errorBackground); font-size: 11px; line-height: 1.35; }
+.runtime-notice button { display: block; margin-top: 6px; padding: 3px 7px; border: 0; border-radius: 3px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
 #session-list { display: grid; gap: 1px; }
 .view-all-button {
   min-height: 27px;
@@ -57,20 +59,42 @@ button { color: inherit; }
 .view-all-button:hover { color: var(--vscode-foreground); }
 .chat-row {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
   width: 100%;
   min-height: 28px;
-  padding: 4px 7px;
-  border: 0;
   border-radius: 7px;
   background: transparent;
-  text-align: left;
-  cursor: pointer;
 }
 .chat-row:hover, .chat-row.active { background: var(--vscode-list-hoverBackground); }
 .chat-row.dormant { color: var(--vscode-descriptionForeground); }
+.chat-open {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-actions { display: none; gap: 1px; padding-right: 3px; }
+.chat-row:hover .chat-actions, .chat-row:focus-within .chat-actions { display: inline-flex; }
+.chat-actions button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+.chat-actions button:hover { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-foreground); }
 .chat-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .chat-age { color: var(--vscode-descriptionForeground); font-size: 11px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--vscode-descriptionForeground); }

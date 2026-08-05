@@ -33,6 +33,16 @@ test("recent session index updates title without duplicating identity", async ()
   assert.equal(store.find("session-1")?.titleSource, "manual");
 });
 
+test("prunes only records whose exact worktree or transcript disappeared", async () => {
+  const store = new RecentSessionStore(fakeMemento());
+  store.upsert(record(1));
+  store.upsert(record(2));
+  const removed = store.pruneUnavailable((candidate) => !candidate.includes("-1"));
+  await store.flush();
+  assert.deepEqual(removed, ["session-1"]);
+  assert.deepEqual(store.list().map((entry) => entry.id), ["session-2"]);
+});
+
 function fakeMemento(): vscode.Memento {
   const values = new Map<string, unknown>();
   return {

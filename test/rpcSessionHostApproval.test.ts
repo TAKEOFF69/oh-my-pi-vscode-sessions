@@ -151,6 +151,8 @@ test("verified Dzialki host cancels unexpected approval, restores draft, and rea
 
   const genericStatuses: string[] = [];
   const genericPosts: Record<string, unknown>[] = [];
+  let firstPromptAccepts = 0;
+  let firstPromptStarts = 0;
   const genericHost = new RpcSessionHost({
     cwd: process.cwd(),
     kind: "work",
@@ -177,6 +179,12 @@ test("verified Dzialki host cancels unexpected approval, restores draft, and rea
     onTitleChange: () => false,
     onSessionFileChange() {},
     onLoopHandoff() {},
+    onFirstPromptAccepted() {
+      firstPromptAccepts += 1;
+    },
+    onFirstPromptStarted() {
+      firstPromptStarts += 1;
+    },
   });
   genericHost.attachWebview(
     {
@@ -189,11 +197,15 @@ test("verified Dzialki host cancels unexpected approval, restores draft, and rea
   );
   try {
     await genericHost.handleWebviewMessage({ type: "ready" });
+    assert.equal(firstPromptAccepts, 0, "session file alone must not claim worktree");
+    assert.equal(firstPromptStarts, 0);
     await genericHost.handleWebviewMessage({
       type: "prompt",
       message: "run generic approval probe",
       images: [],
     });
+    assert.equal(firstPromptAccepts, 1);
+    assert.equal(firstPromptStarts, 1);
     assert.equal(genericStatuses.includes("failed"), false);
     assert.ok(
       genericPosts.some(
@@ -206,6 +218,166 @@ test("verified Dzialki host cancels unexpected approval, restores draft, and rea
   } finally {
     await genericHost.dispose();
   }
+});
+
+test("user prompt waits for the single live advisor probe", async () => {
+  const { RpcSessionHost } = await import("../src/rpc/RpcSessionHost");
+  let accepted = 0;
+  const posts: Record<string, unknown>[] = [];
+  const host = new RpcSessionHost({
+    cwd: process.cwd(),
+    kind: "work",
+    executable: process.execPath,
+    args: [fixturePath, "--slow-advisor"],
+    label: "Advisor serialization",
+    parity: {
+      name: "dzialki-work",
+      provider: "anthropic",
+      modelId: "claude-opus-5",
+      thinkingLevel: "xhigh",
+      cwd: process.cwd(),
+      requiredTools: fixtureTools,
+      allowedTools: fixtureTools,
+      forbiddenTools: [],
+    },
+    logger: { info() {}, error() {}, show() {}, dispose() {} },
+    onStatusChange() {},
+    onTitleChange: () => false,
+    onSessionFileChange() {},
+    onLoopHandoff() {},
+    onFirstPromptAccepted() { accepted += 1; },
+  });
+  host.attachWebview({
+    postMessage: async (message: Record<string, unknown>) => {
+      posts.push(message);
+      return true;
+    },
+  } as never, "advisor-surface");
+  try {
+    await host.handleWebviewMessage({ type: "ready" });
+    await host.handleWebviewMessage({
+      type: "prompt",
+      message: "first",
+      images: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 170));
+    await host.handleWebviewMessage({
+      type: "prompt",
+      message: "second",
+      images: [],
+    });
+    assert.equal(accepted, 1, "worktree claim callback remains exactly once");
+    assert.equal(
+      posts.some((frame) =>
+        frame.type === "restoreDraft" && frame.text === "second"),
+      false,
+    );
+  } finally {
+    await host.dispose();
+  }
+});
+
+test("dispose and restart release an in-flight first-prompt reservation exactly once", async () => {
+  const { RpcSessionHost } = await import("../src/rpc/RpcSessionHost");
+  for (const action of ["dispose", "restart"] as const) {
+    let accepted = 0;
+    let started = 0;
+    let rejected = 0;
+    const host = new RpcSessionHost({
+      cwd: process.cwd(),
+      kind: "work",
+      executable: process.execPath,
+      args: [fixturePath, "--hang-prompt"],
+      label: `First prompt ${action}`,
+      parity: {
+        name: "dzialki-work",
+        provider: "anthropic",
+        modelId: "claude-opus-5",
+        thinkingLevel: "xhigh",
+        cwd: process.cwd(),
+        requiredTools: fixtureTools,
+        allowedTools: fixtureTools,
+        forbiddenTools: [],
+      },
+      logger: { info() {}, error() {}, show() {}, dispose() {} },
+      onStatusChange() {},
+      onTitleChange: () => false,
+      onSessionFileChange() {},
+      onLoopHandoff() {},
+      onFirstPromptStarted() { started += 1; },
+      onFirstPromptAccepted() { accepted += 1; },
+      onFirstPromptRejected() { rejected += 1; },
+    });
+    host.attachWebview({ postMessage: async () => true } as never, `first-${action}`);
+    await host.handleWebviewMessage({ type: "ready" });
+    const pendingPrompt = host.handleWebviewMessage({
+      type: "prompt",
+      message: "hold this prompt",
+      images: [],
+    });
+    await waitFor(() => started === 1);
+    if (action === "restart") await host.restart();
+    else await host.dispose();
+    await pendingPrompt;
+    assert.equal(accepted, 0, `${action} must not claim an unacknowledged prompt`);
+    assert.equal(rejected, 1, `${action} must release reservation exactly once`);
+    await host.dispose();
+    assert.equal(rejected, 1, `${action} disposal must remain idempotent`);
+  }
+});
+
+test("dispose waits for an acknowledged first prompt to become durable", async () => {
+  const { RpcSessionHost } = await import("../src/rpc/RpcSessionHost");
+  let acceptStarted!: () => void;
+  let finishAccept!: () => void;
+  const started = new Promise<void>((resolve) => { acceptStarted = resolve; });
+  const finish = new Promise<void>((resolve) => { finishAccept = resolve; });
+  let acceptedFinished = false;
+  let rejected = 0;
+  const host = new RpcSessionHost({
+    cwd: process.cwd(),
+    kind: "work",
+    executable: process.execPath,
+    args: [fixturePath],
+    label: "Accepted first prompt close race",
+    parity: {
+      name: "dzialki-work",
+      provider: "anthropic",
+      modelId: "claude-opus-5",
+      thinkingLevel: "xhigh",
+      cwd: process.cwd(),
+      requiredTools: fixtureTools,
+      allowedTools: fixtureTools,
+      forbiddenTools: [],
+    },
+    logger: { info() {}, error() {}, show() {}, dispose() {} },
+    onStatusChange() {},
+    onTitleChange: () => false,
+    onSessionFileChange() {},
+    onLoopHandoff() {},
+    async onFirstPromptAccepted() {
+      acceptStarted();
+      await finish;
+      acceptedFinished = true;
+    },
+    onFirstPromptRejected() { rejected += 1; },
+  });
+  host.attachWebview({ postMessage: async () => true } as never, "accept-close");
+  await host.handleWebviewMessage({ type: "ready" });
+  const prompt = host.handleWebviewMessage({
+    type: "prompt",
+    message: "acknowledge then hold ownership",
+    images: [],
+  });
+  await started;
+  let disposed = false;
+  const closing = host.dispose().then(() => { disposed = true; });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(disposed, false, "close must wait for durable ownership callback");
+  finishAccept();
+  await Promise.all([prompt, closing]);
+  assert.equal(acceptedFinished, true);
+  assert.equal(rejected, 0, "acknowledged prompt must never return to unused");
 });
 
 async function waitFor(predicate: () => boolean): Promise<void> {

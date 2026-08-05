@@ -4,6 +4,7 @@ import { OutputSessionLogger } from "./logging";
 import { SessionManager } from "./sessions/SessionManager";
 import type { SessionPanel } from "./sessions/SessionPanel";
 import { resolveSessionPath } from "./worktrees";
+import { inspectExtensionVersion } from "./extensionVersion";
 
 let activeManager: SessionManager | undefined;
 
@@ -15,6 +16,17 @@ export function activate(context: vscode.ExtensionContext): void {
     context.workspaceState,
   );
   activeManager = manager;
+  const loadedVersion = String(context.extension.packageJSON.version ?? "unknown");
+  const refreshVersionState = (): void => {
+    const state = inspectExtensionVersion(context.extensionUri.fsPath, loadedVersion);
+    logger.info(`Extension version loaded=${state.loaded}; installed=${state.installed ?? "unknown"}`);
+    manager.setCreationBlock(
+      state.reloadRequired
+        ? `OMP Sessions ${state.installed} is installed, but this window still runs ${state.loaded}. Reload this VS Code window before starting another session.`
+        : undefined,
+    );
+  };
+  refreshVersionState();
   logger.info(
     `Extension activated (workspace: ${vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).join(", ") || "none"})`,
   );
@@ -25,6 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
       manager.sidebar,
       { webviewOptions: { retainContextWhenHidden: true } },
     ),
+    vscode.extensions.onDidChange(refreshVersionState),
     vscode.commands.registerCommand("ohMyPiSessions.open", () =>
       manager.openOrCreate(),
     ),

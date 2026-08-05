@@ -29,6 +29,7 @@ type SidebarState = {
   creating: boolean;
   sessions: SidebarSession[];
   profile: SidebarProfile;
+  runtimeNotice?: string;
 };
 
 type VsCodeState = { draft?: string };
@@ -75,7 +76,7 @@ let state: SidebarState = {
   },
 };
 let expanded = false;
-const renderedRows = new Map<string, HTMLButtonElement>();
+const renderedRows = new Map<string, HTMLElement>();
 
 const root = requireElement("app");
 root.innerHTML = `
@@ -95,6 +96,7 @@ root.innerHTML = `
       </nav>
     </header>
     <section class="chat-list" aria-label="OMP chats">
+      <div id="runtime-notice" class="runtime-notice" role="alert" hidden><span></span><button id="reload-button" type="button">Reload window</button></div>
       <div id="session-list"></div>
       <button id="view-all-button" class="view-all-button" type="button" hidden></button>
     </section>
@@ -138,6 +140,7 @@ const creationError = requireElement("creation-error");
 const accessLabel = requireElement("access-label");
 const modelLabel = requireElement("model-label");
 const viewAllButton = requireButton("view-all-button");
+const runtimeNotice = requireElement("runtime-notice");
 
 const restoredState = vscode.getState();
 composer.value = restoredState?.draft ?? "";
@@ -188,6 +191,9 @@ viewAllButton.addEventListener("click", toggleExpanded);
 requireButton("settings-button").addEventListener("click", () =>
   post({ type: "openSettings" }),
 );
+requireButton("reload-button").addEventListener("click", () =>
+  post({ type: "reloadWindow" }),
+);
 
 post({ type: "ready" });
 for (const frame of window.__OMP_SIDEBAR_FIXTURE__ ?? []) {
@@ -205,6 +211,7 @@ function receiveHostMessage(raw: unknown): void {
         ? raw.sessions.filter(isSidebarSession)
         : [],
       profile: isSidebarProfile(raw.profile) ? raw.profile : state.profile,
+      runtimeNotice: typeof raw.runtimeNotice === "string" ? raw.runtimeNotice : undefined,
     };
     render();
   } else if (raw.type === "focusComposer") {
@@ -252,6 +259,9 @@ function render(): void {
   accessLabel.textContent = state.profile.accessLabel;
   modelLabel.textContent = state.profile.modelLabel;
   modelLabel.title = state.profile.modelDetail;
+  runtimeNotice.hidden = !state.runtimeNotice;
+  const runtimeCopy = runtimeNotice.querySelector("span");
+  if (runtimeCopy) runtimeCopy.textContent = state.runtimeNotice ?? "";
   renderComposer();
 }
 
@@ -269,14 +279,22 @@ function patchSessionRows(): void {
   for (const session of visibleSessions) {
     let row = renderedRows.get(session.id);
     if (!row) {
-      row = document.createElement("button");
-      row.type = "button";
+      row = document.createElement("div");
       row.className = "chat-row";
       row.dataset.sessionId = session.id;
-      row.innerHTML = `<span class="status-dot"></span><span class="chat-label"></span><span class="chat-age"></span>`;
-      row.addEventListener("click", () =>
-        post({ type: "focusSession", id: session.id }),
+      row.innerHTML = `<button class="chat-open" type="button"><span class="status-dot"></span><span class="chat-label"></span><span class="chat-age"></span></button><span class="chat-actions"><button type="button" data-session-action="restart" title="Restart chat" aria-label="Restart chat">&#x21bb;</button><button type="button" data-session-action="close" title="Close chat" aria-label="Close chat">&#xd7;</button><button type="button" data-session-action="remove" title="Remove from history" aria-label="Remove from history">&#x2212;</button></span>`;
+      row.querySelector(".chat-open")?.addEventListener("click", () =>
+        post({ type: "focusSession", id: row!.dataset.sessionId }),
       );
+      row.querySelector(".chat-actions")?.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-session-action]");
+        const id = row!.dataset.sessionId;
+        if (!button || !id) return;
+        const action = button.dataset.sessionAction;
+        if (action === "restart") post({ type: "restartSession", id });
+        if (action === "close") post({ type: "closeSession", id });
+        if (action === "remove") post({ type: "removeSession", id });
+      });
       renderedRows.set(session.id, row);
     }
     row.classList.toggle("active", session.active);
@@ -287,6 +305,12 @@ function patchSessionRows(): void {
     row.querySelector<HTMLElement>(".chat-age")!.textContent = relativeAge(
       session.updatedAt,
     );
+    row.querySelectorAll<HTMLButtonElement>("[data-session-action='restart'],[data-session-action='close']")
+      .forEach((button) => { button.hidden = !session.live; });
+    const remove = row.querySelector<HTMLButtonElement>("[data-session-action='remove']");
+    if (remove) remove.hidden = session.live;
+    const open = row.querySelector<HTMLButtonElement>(".chat-open");
+    if (open) open.title = session.label;
     row.title = session.live
       ? `${session.label} · ${session.status}`
       : `${session.label} · reopen exact saved worktree`;
@@ -326,11 +350,11 @@ function submit(): void {
   }
   creationError.hidden = true;
   state = { ...state, creating: true };
-  composer.value = "";
   const images = attachments;
-  attachmentEpoch += 1;
-  replaceAttachments([]);
-  persistComposer();
+  // Host has durably accepted ownership before this message. Keep the visible
+  // draft until acknowledgement, but do not leak it into the conversation
+  // webview's shared VS Code state slot.
+  vscode.setState({ draft: "" });
   resizeComposer();
   renderComposer();
   post({ type: "createSession", prompt, images });

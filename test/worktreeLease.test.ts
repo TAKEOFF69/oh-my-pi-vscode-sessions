@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   acquireWriterLease,
   acquireWriterLeaseAtRoot,
+  inspectActiveWriterLease,
 } from "../src/worktreeLease";
 
 test("writer lease is atomic and token-bound", async () => {
@@ -52,6 +53,7 @@ test("repository root, nested folder, and junction share one writer lease", asyn
     const first = await acquireWriterLease(repository, "root");
     assert.equal(first.acquired, true);
     if (!first.acquired) return;
+    assert.equal((await inspectActiveWriterLease(repository))?.label, "root");
 
     const nestedAttempt = await acquireWriterLease(nested, "nested");
     assert.equal(nestedAttempt.acquired, false);

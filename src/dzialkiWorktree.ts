@@ -17,6 +17,9 @@ export type DzialkiWorktreeRole = "work" | "loop";
 export type ProvisionedDzialkiWorktree = {
   cwd: string;
   branch: string;
+  fetchedMainSha?: string;
+  fetchedAtMs?: number;
+  ephemeralCleanupToken?: string;
 };
 
 type CommandResult = {
@@ -43,6 +46,11 @@ type ProvisionOptions = {
   baseRef?: string;
   fetchOriginMain?: boolean;
   configureHooks?: boolean;
+  ephemeralCleanupToken?: string;
+  writeEphemeralMarker?: (
+    cwd: string,
+    marker: Readonly<Record<string, unknown>>,
+  ) => Promise<void>;
 };
 
 export async function provisionGitWorktree(
@@ -92,11 +100,13 @@ export async function provisionGitWorktree(
   let created = false;
   let bootstrapStarted = false;
   let expectedHead = "";
+  let fetchedAtMs: number | undefined;
   try {
     if (fetchOriginMain) {
       await runPhase("fetch origin/main", () =>
         runGit(repositoryRoot, ["fetch", "origin", "main"]),
       );
+      fetchedAtMs = Date.now();
     }
     const resolvedHead = await runPhase("resolve base ref", () =>
       runGit(repositoryRoot, ["rev-parse", baseRef]),
@@ -163,8 +173,35 @@ export async function provisionGitWorktree(
         repositoryRoot,
         cwd,
       );
+      if (options.ephemeralCleanupToken) {
+        const marker = {
+            schema: 1,
+            token: options.ephemeralCleanupToken,
+            branch,
+            baseSha: expectedHead,
+            createdAt: new Date().toISOString(),
+            phase: "unused",
+        };
+        if (options.writeEphemeralMarker) {
+          await options.writeEphemeralMarker(cwd, marker);
+        } else {
+          await writeFile(
+            nodePath.join(cwd, ".agent-omp-ephemeral.json"),
+            `${JSON.stringify(marker)}\n`,
+            { encoding: "utf8", flag: "wx" },
+          );
+        }
+      }
     });
-    return worktree;
+    return {
+      ...worktree,
+      ...(fetchOriginMain
+        ? { fetchedMainSha: expectedHead, fetchedAtMs }
+        : {}),
+      ...(options.ephemeralCleanupToken
+        ? { ephemeralCleanupToken: options.ephemeralCleanupToken }
+        : {}),
+    };
   } catch (error) {
     if (created && !bootstrapStarted) {
       try {

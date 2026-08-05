@@ -1,13 +1,10 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as nodePath from "node:path";
-
 import * as vscode from "vscode";
 
 import { extractLoopHandoffAlias } from "../loopHandoff";
 import type { SessionLogger } from "../logging";
 import type { SessionStatus } from "../sessions/SessionPanel";
 import type { SessionHost } from "../sessions/SessionHost";
+import { resolveSessionFile } from "../sessionFileResolver";
 import {
   parsePromptImages,
   type PromptDraft,
@@ -23,6 +20,9 @@ import {
   validateRpcRuntimeConfigFrame,
 } from "./parity";
 import { InitialPromptOwnership } from "./initialPromptOwnership";
+import { ambientMcpMounts } from "./mcpMountGate";
+import { FINAL_ANSWER_QUIET_MS, isTerminalAssistantMessageEnd } from "./turnWatchdog";
+import { advisorStatusMatches, EXPECTED_ADVISOR_SELECTOR } from "./advisorStatus";
 import {
   classifyPreParityFrame,
   enforceToolApprovalTripwire,
@@ -57,6 +57,11 @@ export type RpcSessionHostOptions = {
   ) => boolean;
   onSessionFileChange: (sessionFile: string) => void;
   onLoopHandoff: (alias: string) => void | Promise<void>;
+  onInitialPromptSettled?: (accepted: boolean) => void | Promise<void>;
+  onFirstPromptAccepted?: () => void | Promise<void>;
+  onFirstPromptStarted?: () => void | Promise<void>;
+  onFirstPromptRejected?: () => void | Promise<void>;
+  env?: NodeJS.ProcessEnv;
 };
 
 export class RpcSessionHost implements SessionHost {
@@ -77,6 +82,11 @@ export class RpcSessionHost implements SessionHost {
   ) => boolean;
   readonly #onSessionFileChange: (sessionFile: string) => void;
   readonly #onLoopHandoff: (alias: string) => void | Promise<void>;
+  readonly #onInitialPromptSettled: (accepted: boolean) => void | Promise<void>;
+  readonly #onFirstPromptAccepted: () => void | Promise<void>;
+  readonly #onFirstPromptStarted: () => void | Promise<void>;
+  readonly #onFirstPromptRejected: () => void | Promise<void>;
+  readonly #env: NodeJS.ProcessEnv | undefined;
   #label: string;
   #rpc: RpcProcess | undefined;
   #disposed = false;
@@ -105,6 +115,19 @@ export class RpcSessionHost implements SessionHost {
   #restartPromise: Promise<void> | undefined;
   #disposePromise: Promise<void> | undefined;
   #disposables: vscode.Disposable[] = [];
+  #initialPromptSettled = false;
+  #firstPromptAccepted = false;
+  #firstPromptReserved = false;
+  #firstPromptTransition: Promise<void> = Promise.resolve();
+  #turnWatchdog: NodeJS.Timeout | undefined;
+  #terminalAnswerPending = false;
+  #watchdogRecovering = false;
+  #advisorProbeActive = false;
+  #advisorProbeOutput: string[] = [];
+  #advisorProbePromise: Promise<boolean> | undefined;
+  #advisorProbeTimer: NodeJS.Timeout | undefined;
+  #rpcGeneration = 0;
+  #advisorVerifiedAt: number | undefined;
 
   constructor(options: RpcSessionHostOptions) {
     this.#cwd = options.cwd;
@@ -124,6 +147,11 @@ export class RpcSessionHost implements SessionHost {
     this.#onTitleChange = options.onTitleChange;
     this.#onSessionFileChange = options.onSessionFileChange;
     this.#onLoopHandoff = options.onLoopHandoff;
+    this.#onInitialPromptSettled = options.onInitialPromptSettled ?? (() => undefined);
+    this.#onFirstPromptAccepted = options.onFirstPromptAccepted ?? (() => undefined);
+    this.#onFirstPromptStarted = options.onFirstPromptStarted ?? (() => undefined);
+    this.#onFirstPromptRejected = options.onFirstPromptRejected ?? (() => undefined);
+    this.#env = options.env;
   }
 
   attachWebview(webview: vscode.Webview, surfaceToken: string): void {
@@ -196,6 +224,11 @@ export class RpcSessionHost implements SessionHost {
       return this.#disposePromise;
     }
     this.#disposed = true;
+    this.#rpcGeneration += 1;
+    this.#clearAdvisorProbeTimer();
+    this.#advisorVerifiedAt = undefined;
+    this.#clearTurnWatchdog();
+    void this.#settleInitialPrompt(false);
     const rpc = this.#rpc;
     this.#rpc = undefined;
     this.#disposePromise = (async () => {
@@ -203,6 +236,8 @@ export class RpcSessionHost implements SessionHost {
         void this.#queueTeardown(rpc);
       }
       await this.#teardownBarrier.wait();
+      await this.#releaseFirstPromptReservation();
+      await this.#advisorProbePromise?.catch(() => false);
       this.#promptLifecycle.clear();
       for (const disposable of this.#disposables) {
         disposable.dispose();
@@ -213,6 +248,9 @@ export class RpcSessionHost implements SessionHost {
   }
 
   async #restartRpc(): Promise<void> {
+    this.#rpcGeneration += 1;
+    this.#clearAdvisorProbeTimer();
+    this.#advisorVerifiedAt = undefined;
     this.#resumeSessionFile = this.#sessionFile;
     const drafts = this.#promptLifecycle.drain();
     const rpc = this.#rpc;
@@ -221,11 +259,14 @@ export class RpcSessionHost implements SessionHost {
       void this.#queueTeardown(rpc);
     }
     await this.#teardownBarrier.wait();
+    await this.#releaseFirstPromptReservation();
+    await this.#advisorProbePromise?.catch(() => false);
     this.#preParityFrames = [];
     this.#preParityBytes = 0;
     this.#parityPassed = false;
     this.#parityFailed = false;
     this.#streaming = false;
+    this.#clearTurnWatchdog();
     this.#historySnapshot = undefined;
     this.#commandsSnapshot = undefined;
     this.#activeTurnFrames = [];
@@ -347,6 +388,9 @@ export class RpcSessionHost implements SessionHost {
     if (this.#disposed || this.#rpc) {
       return;
     }
+    const generation = ++this.#rpcGeneration;
+    this.#clearAdvisorProbeTimer();
+    this.#advisorVerifiedAt = undefined;
     const startedAt = Date.now();
     this.#startupDiagnostics = "";
     this.#onStatusChange("starting");
@@ -359,6 +403,7 @@ export class RpcSessionHost implements SessionHost {
       cwd: this.#cwd,
       startupTimeoutMs: 45_000,
       emitTitleEvents: true,
+      env: this.#env,
     });
     this.#rpc = rpc;
     rpc.on("frame", (frame: RpcFrame) => {
@@ -384,6 +429,8 @@ export class RpcSessionHost implements SessionHost {
         return;
       }
       this.#logger.error(`RPC protocol failure for "${this.#label}"`, error);
+      this.#clearAdvisorProbeTimer();
+      this.#advisorVerifiedAt = undefined;
       this.#parityFailed = true;
       this.#onStatusChange("failed");
       void this.#post({
@@ -399,7 +446,10 @@ export class RpcSessionHost implements SessionHost {
         if (this.#rpc !== rpc) {
           return;
         }
+        if (generation !== this.#rpcGeneration) return;
         this.#rpc = undefined;
+        this.#clearAdvisorProbeTimer();
+        this.#advisorVerifiedAt = undefined;
         void this.#restoreInitialPrompt();
         if (this.#disposed || this.#parityFailed) {
           return;
@@ -470,6 +520,7 @@ export class RpcSessionHost implements SessionHost {
       this.#logger.info(
         `RPC parity ready for "${this.#label}": ${Date.now() - startedAt} ms`,
       );
+      if (!(await this.#verifyAdvisorRuntime(rpc, generation))) return;
 
       const [history, commands] = await Promise.all([
         state.messageCount === 0
@@ -492,6 +543,7 @@ export class RpcSessionHost implements SessionHost {
       if (this.#rpc !== rpc || this.#disposed) {
         return;
       }
+      if (!this.#validateAmbientMcpMounts(history)) return;
       this.#historySnapshot = history;
       this.#commandsSnapshot = commands;
       await this.#post({ type: "rpc", frame: stateResponse });
@@ -508,11 +560,12 @@ export class RpcSessionHost implements SessionHost {
       if (!restored) {
         const initialPrompt = this.#initialPromptOwnership.claimForDelivery();
         if (initialPrompt) {
-          await this.#sendPrompt(
+          const accepted = await this.#sendPrompt(
             "prompt",
             initialPrompt.message,
             initialPrompt.images,
           );
+          await this.#settleInitialPrompt(accepted);
         }
       }
     } catch (error) {
@@ -545,6 +598,25 @@ export class RpcSessionHost implements SessionHost {
       text: prompt.message,
       images: prompt.images,
     });
+    await this.#settleInitialPrompt(false);
+  }
+
+  showHostNotice(detail: string): void {
+    void this.#post({
+      type: "rpc",
+      frame: {
+        type: "notice",
+        level: "error",
+        source: "Extension reload required",
+        message: detail,
+      },
+    });
+  }
+
+  async #settleInitialPrompt(accepted: boolean): Promise<void> {
+    if (this.#initialPromptSettled) return;
+    this.#initialPromptSettled = true;
+    await this.#onInitialPromptSettled(accepted);
   }
 
   #validateParity(state: RpcSessionState): boolean {
@@ -573,18 +645,32 @@ export class RpcSessionHost implements SessionHost {
     );
   }
 
+  #validateAmbientMcpMounts(frame: RpcFrame): boolean {
+    if (!this.#parity?.name.startsWith("dzialki-")) return true;
+    const mounts = ambientMcpMounts(frame);
+    return mounts.length === 0
+      ? true
+      : this.#blockParity(
+          `Ambient MCP devices mounted despite project isolation: ${mounts.join(", ")}`,
+        );
+  }
+
   #blockParity(detail: string): false {
+    this.#clearAdvisorProbeTimer();
+    this.#advisorVerifiedAt = undefined;
     this.#parityFailed = true;
     this.#parityPassed = false;
     this.#logger.error(`RPC parity blocked "${this.#label}": ${detail}`);
     this.#onStatusChange("failed");
     void this.#post({ type: "parity", ok: false, detail });
     this.#preParityFrames = [];
+    this.#clearTurnWatchdog();
     this.#preParityBytes = 0;
     const drafts = this.#promptLifecycle.drain();
     if (drafts.length > 0) {
       void this.#restoreDrafts(drafts);
     }
+    void this.#restoreInitialPrompt();
     const rpc = this.#rpc;
     this.#rpc = undefined;
     if (rpc) {
@@ -599,6 +685,12 @@ export class RpcSessionHost implements SessionHost {
   }
 
   #receiveRpcFrame(frame: RpcFrame): void {
+    if (!this.#validateAmbientMcpMounts(frame)) return;
+    if (this.#advisorProbeActive && frame.type === "command_output") {
+      const text = typeof frame.text === "string" ? frame.text : "";
+      if (text) this.#advisorProbeOutput.push(text);
+      return;
+    }
     if (!this.#parityPassed) {
       if (classifyPreParityFrame(frame) === "reject-ui") {
         this.#rejectPreParityUiRequest(frame);
@@ -648,9 +740,13 @@ export class RpcSessionHost implements SessionHost {
       return;
     }
     if (!this.#validateRuntimeConfig(frame)) return;
+    this.#observeTurnWatchdog(frame);
     this.#observeRpcFrame(frame);
     this.#handleRpcFrame(frame);
     this.#deliverRpcFrame(frame);
+    if (frame.type === "agent_end" && frame.isTerminal !== false) {
+      this.#scheduleAdvisorProbe();
+    }
   }
 
   #flushPreParityFrames(): boolean {
@@ -661,6 +757,8 @@ export class RpcSessionHost implements SessionHost {
       // Startup set_model/set_thinking_level responses are intentionally
       // buffered and may omit the resulting state in OMP 17.1.3. The full
       // get_state snapshot was validated immediately before this flush.
+      if (!this.#validateAmbientMcpMounts(frame)) return false;
+      this.#observeTurnWatchdog(frame);
       this.#observeRpcFrame(frame);
       this.#handleRpcFrame(frame);
       this.#deliverRpcFrame(frame);
@@ -810,13 +908,13 @@ export class RpcSessionHost implements SessionHost {
     type: "prompt" | "steer" | "follow_up",
     message: string,
     images: readonly PromptImage[] = [],
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!this.#parityPassed || this.#parityFailed) {
       await this.#post({ type: "restoreDraft", text: message, images });
       await vscode.window.showErrorMessage(
         "OMP Sessions: prompt blocked until exact RPC parity passes.",
       );
-      return;
+      return false;
     }
     const rpc = this.#rpc;
     if (!rpc?.running) {
@@ -824,9 +922,40 @@ export class RpcSessionHost implements SessionHost {
       await vscode.window.showErrorMessage(
         "OMP Sessions: RPC runtime is not running.",
       );
-      return;
+      return false;
     }
+    this.#clearAdvisorProbeTimer();
+    const advisorProbe = this.#advisorProbePromise;
+    if (advisorProbe && !(await advisorProbe)) {
+      await this.#post({ type: "restoreDraft", text: message, images });
+      return false;
+    }
+    if (this.#rpc !== rpc || !rpc.running || !this.#parityPassed) {
+      await this.#post({ type: "restoreDraft", text: message, images });
+      return false;
+    }
+    const generation = this.#rpcGeneration;
     const id = `vscode_prompt_${++this.#promptSequence}`;
+    let reservedByThisPrompt = false;
+    if (!this.#firstPromptAccepted) {
+      try {
+        reservedByThisPrompt = await this.#reserveFirstPrompt();
+      } catch (error) {
+        await this.#post({ type: "restoreDraft", text: message, images });
+        this.#logger.error(`Could not reserve first prompt for "${this.#label}"`, error);
+        return false;
+      }
+    }
+    if (
+      this.#disposed ||
+      this.#rpc !== rpc ||
+      !rpc.running ||
+      generation !== this.#rpcGeneration
+    ) {
+      if (reservedByThisPrompt) await this.#releaseFirstPromptReservation();
+      await this.#post({ type: "restoreDraft", text: message, images });
+      return false;
+    }
     this.#promptLifecycle.begin(id, message, images);
     const command = buildRpcPromptCommand(
       type,
@@ -837,7 +966,22 @@ export class RpcSessionHost implements SessionHost {
     );
     try {
       await rpc.request(command);
+      const accepted = await this.#markFirstPromptAccepted();
+      if (!accepted) {
+        const draft = this.#promptLifecycle.fail(id);
+        if (draft !== undefined) {
+          await this.#post({
+            type: "restoreDraft",
+            text: draft.message,
+            images: draft.images,
+          });
+        }
+      }
+      return accepted;
     } catch (error) {
+      if (reservedByThisPrompt && !this.#firstPromptAccepted) {
+        await this.#releaseFirstPromptReservation();
+      }
       const draft = this.#promptLifecycle.fail(id);
       if (draft !== undefined) {
         await this.#post({
@@ -852,7 +996,240 @@ export class RpcSessionHost implements SessionHost {
         error,
       );
       await vscode.window.showErrorMessage(`OMP Sessions: ${failure}`);
+      return false;
     }
+  }
+
+  async #verifyAdvisorRuntime(
+    rpc: RpcProcess,
+    generation = this.#rpcGeneration,
+    announce = true,
+  ): Promise<boolean> {
+    if (!this.#parity?.name.startsWith("dzialki-")) return true;
+    if (this.#advisorProbePromise) return this.#advisorProbePromise;
+    const probe = this.#runAdvisorProbe(rpc, generation, announce);
+    this.#advisorProbePromise = probe;
+    try {
+      return await probe;
+    } finally {
+      if (this.#advisorProbePromise === probe) {
+        this.#advisorProbePromise = undefined;
+      }
+    }
+  }
+
+  async #runAdvisorProbe(
+    rpc: RpcProcess,
+    generation: number,
+    announce: boolean,
+  ): Promise<boolean> {
+    if (
+      this.#disposed ||
+      this.#rpc !== rpc ||
+      generation !== this.#rpcGeneration ||
+      !rpc.running
+    ) {
+      return false;
+    }
+    this.#advisorProbeActive = true;
+    this.#advisorProbeOutput = [];
+    try {
+      const response = await rpc.request(
+        { type: "prompt", message: "/advisor status" },
+        15_000,
+      );
+      const output = this.#advisorProbeOutput.join("\n");
+      if (
+        this.#disposed ||
+        this.#rpc !== rpc ||
+        generation !== this.#rpcGeneration
+      ) {
+        return false;
+      }
+      const localOnly = !isRecord(response.data) || response.data.agentInvoked !== true;
+      if (!localOnly || !advisorStatusMatches(output)) {
+        return this.#blockParity(
+          `Live advisor check failed; expected ${EXPECTED_ADVISOR_SELECTOR}.`,
+        );
+      }
+      this.#advisorVerifiedAt = Date.now();
+      if (announce) await this.#postBootstrap(this.#attachmentRevision);
+      this.#logger.info(
+        `Live advisor verified for "${this.#label}" (${EXPECTED_ADVISOR_SELECTOR})`,
+      );
+      return true;
+    } catch (error) {
+      if (
+        this.#disposed ||
+        this.#rpc !== rpc ||
+        generation !== this.#rpcGeneration
+      ) {
+        return false;
+      }
+      this.#logger.error(`Live advisor check failed for "${this.#label}"`, error);
+      return this.#blockParity(
+        `Live advisor check failed; expected ${EXPECTED_ADVISOR_SELECTOR}.`,
+      );
+    } finally {
+      this.#advisorProbeActive = false;
+      this.#advisorProbeOutput = [];
+    }
+  }
+
+  #scheduleAdvisorProbe(): void {
+    this.#clearAdvisorProbeTimer();
+    const rpc = this.#rpc;
+    const generation = this.#rpcGeneration;
+    if (!rpc?.running || !this.#parityPassed || this.#disposed) return;
+    this.#advisorProbeTimer = setTimeout(() => {
+      this.#advisorProbeTimer = undefined;
+      if (
+        this.#rpc !== rpc ||
+        generation !== this.#rpcGeneration ||
+        !rpc.running ||
+        this.#disposed ||
+        this.#streaming ||
+        !this.#parityPassed
+      ) {
+        return;
+      }
+      void this.#verifyAdvisorRuntime(rpc, generation, false);
+    }, 150);
+  }
+
+  #clearAdvisorProbeTimer(): void {
+    if (!this.#advisorProbeTimer) return;
+    clearTimeout(this.#advisorProbeTimer);
+    this.#advisorProbeTimer = undefined;
+  }
+
+  async #reserveFirstPrompt(): Promise<boolean> {
+    let reserved = false;
+    await this.#queueFirstPromptTransition(async () => {
+      if (
+        this.#disposed ||
+        this.#firstPromptAccepted ||
+        this.#firstPromptReserved
+      ) return;
+      await this.#onFirstPromptStarted();
+      this.#firstPromptReserved = true;
+      reserved = true;
+    });
+    return reserved;
+  }
+
+  async #markFirstPromptAccepted(): Promise<boolean> {
+    let accepted = false;
+    await this.#queueFirstPromptTransition(async () => {
+      if (this.#firstPromptAccepted) {
+        accepted = true;
+        return;
+      }
+      if (!this.#firstPromptReserved) return;
+      await this.#onFirstPromptAccepted();
+      this.#firstPromptAccepted = true;
+      this.#firstPromptReserved = false;
+      accepted = true;
+    });
+    return accepted;
+  }
+
+  async #releaseFirstPromptReservation(): Promise<void> {
+    await this.#queueFirstPromptTransition(async () => {
+      if (!this.#firstPromptReserved || this.#firstPromptAccepted) return;
+      this.#firstPromptReserved = false;
+      try {
+        await this.#onFirstPromptRejected();
+      } catch (error) {
+        this.#logger.error(
+          `Could not release first prompt reservation for "${this.#label}"`,
+          error,
+        );
+      }
+    });
+  }
+
+  #queueFirstPromptTransition(operation: () => Promise<void>): Promise<void> {
+    const transition = this.#firstPromptTransition.then(operation);
+    this.#firstPromptTransition = transition.catch(() => undefined);
+    return transition;
+  }
+
+  #observeTurnWatchdog(frame: RpcFrame): void {
+    if (this.#watchdogRecovering) return;
+    if (frame.type === "agent_start" || frame.type === "turn_start") {
+      this.#terminalAnswerPending = false;
+      this.#clearTurnWatchdog();
+      return;
+    }
+    if (
+      (frame.type === "agent_end" && frame.isTerminal !== false) ||
+      (frame.type === "prompt_result" && frame.agentInvoked === false)
+    ) {
+      this.#terminalAnswerPending = false;
+      this.#clearTurnWatchdog();
+      return;
+    }
+    if (isTerminalAssistantMessageEnd(frame)) {
+      this.#terminalAnswerPending = true;
+    }
+    if (!this.#terminalAnswerPending || !this.#streaming) return;
+    this.#clearTurnWatchdog(false);
+    this.#turnWatchdog = setTimeout(() => {
+      this.#turnWatchdog = undefined;
+      void this.#recoverStuckTurn();
+    }, FINAL_ANSWER_QUIET_MS);
+    this.#turnWatchdog.unref?.();
+  }
+
+  async #recoverStuckTurn(): Promise<void> {
+    const rpc = this.#rpc;
+    if (
+      this.#disposed ||
+      this.#watchdogRecovering ||
+      !this.#terminalAnswerPending ||
+      !this.#streaming ||
+      !rpc?.running
+    ) return;
+    this.#watchdogRecovering = true;
+    try {
+      const before = responseData(await rpc.request({ type: "get_state" }, 10_000));
+      if (before.isStreaming === true) {
+        await rpc.request({ type: "abort" }, 10_000);
+      }
+      const after = responseData(await rpc.request({ type: "get_state" }, 10_000));
+      if (after.isStreaming === true) {
+        throw new Error("OMP remained streaming after one recovery abort");
+      }
+      this.#streaming = false;
+      this.#terminalAnswerPending = false;
+      this.#onStatusChange("idle");
+      await this.#post({
+        type: "rpc",
+        frame: {
+          type: "notice",
+          level: "warning",
+          source: "OMP transport recovered",
+          message: "Final answer was complete but RPC remained busy; one bounded abort restored the session.",
+        },
+      });
+    } catch (error) {
+      this.#logger.error(`RPC stuck-turn recovery failed for "${this.#label}"`, error);
+      this.#onStatusChange("failed");
+      await this.#post({
+        type: "transport",
+        status: "failed",
+        detail: "OMP remained busy after a completed answer. Restart this chat runtime.",
+      });
+    } finally {
+      this.#watchdogRecovering = false;
+    }
+  }
+
+  #clearTurnWatchdog(resetTerminal = true): void {
+    if (this.#turnWatchdog) clearTimeout(this.#turnWatchdog);
+    this.#turnWatchdog = undefined;
+    if (resetTerminal) this.#terminalAnswerPending = false;
   }
 
   async #restoreDrafts(drafts: readonly PromptDraft[]): Promise<void> {
@@ -956,24 +1333,7 @@ export class RpcSessionHost implements SessionHost {
   }
 
   #resolveFilePath(filePath: string): string | undefined {
-    const expanded = filePath.startsWith("~")
-      ? nodePath.join(os.homedir(), filePath.slice(1))
-      : filePath;
-    const candidates = [
-      nodePath.isAbsolute(expanded)
-        ? expanded
-        : nodePath.resolve(this.#cwd, expanded),
-      ...(vscode.workspace.workspaceFolders ?? []).map((folder) =>
-        nodePath.resolve(folder.uri.fsPath, expanded),
-      ),
-    ];
-    return candidates.find((candidate) => {
-      try {
-        return fs.existsSync(candidate) && fs.statSync(candidate).isFile();
-      } catch {
-        return false;
-      }
-    });
+    return resolveSessionFile(this.#cwd, filePath);
   }
 
   #post(message: unknown, attachmentRevision?: number): Thenable<boolean> {
@@ -1009,7 +1369,9 @@ export class RpcSessionHost implements SessionHost {
       sessionName: this.#label,
       kind: this.#kind,
       advisorLabel: this.#parity
-        ? "Configured: GPT-5.6 Sol · Extra High"
+        ? this.#advisorVerifiedAt
+          ? "Verified live: GPT-5.6 Sol · Extra High"
+          : "Checking: GPT-5.6 Sol · Extra High"
         : "OMP project policy",
       parityRequired: Boolean(this.#parity),
       trustedProjectPolicy: this.#parity?.name.startsWith("dzialki-") === true,

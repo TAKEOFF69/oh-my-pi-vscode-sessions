@@ -22,6 +22,13 @@ import {
   provisionGitWorktree,
 } from "../dzialkiWorktree";
 import {
+  claimEphemeralWorktree,
+  cleanupUnusedEphemeralWorktree,
+  readEphemeralWorktreeMarker,
+  releaseEphemeralWorktreeReservation,
+  reserveEphemeralWorktree,
+} from "../ephemeralWorktree";
+import {
   LoopHandoffSingleFlight,
   sameLoopAlias,
 } from "../loopHandoff";
@@ -41,10 +48,7 @@ import {
   sameDirectory,
   type GitWorktree,
 } from "../worktrees";
-import {
-  acquireWriterLease,
-  type WriterLease,
-} from "../worktreeLease";
+import { acquireWriterLease, type WriterLease } from "../worktreeLease";
 import {
   buildSessionLaunchPlan,
   canOfferReadOnlyDowngrade,
@@ -69,6 +73,16 @@ type DirectoryChoice = vscode.QuickPickItem & {
 };
 
 type DirectoryMode = "auto" | "choose";
+type SessionDirectory = {
+  cwd: string;
+  branch?: string;
+  fetchedMainSha?: string;
+  fetchedAtMs?: number;
+  ephemeralCleanupToken?: string;
+  cleanupRoot?: string;
+};
+const MAX_LIVE_RPC_SESSIONS = 6;
+const ORPHAN_RECOVERY_MIN_AGE_MS = 2 * 60 * 1_000;
 
 export class SessionManager implements vscode.Disposable {
   readonly sidebar: SessionSidebarProvider;
@@ -89,6 +103,14 @@ export class SessionManager implements vscode.Disposable {
   #acceptingSessions = true;
   #shutdownPromise: Promise<void> | undefined;
   #resumeFlights = new Map<string, Promise<SessionPanel | undefined>>();
+  #creationBlock: string | undefined;
+  #ephemeralWorktrees = new Map<string, {
+    cwd: string;
+    cleanupRoot: string;
+    token: string;
+  }>();
+  #orphanRecoveryTimer: NodeJS.Timeout | undefined;
+  #orphanRecoveryRunning = false;
 
   constructor(
     extensionUri: vscode.Uri,
@@ -98,21 +120,29 @@ export class SessionManager implements vscode.Disposable {
     this.#extensionUri = extensionUri;
     this.#logger = logger;
     this.#recent = new RecentSessionStore(workspaceState);
+    const pruned = this.#recent.pruneUnavailable(existsSync);
+    if (pruned.length > 0) {
+      this.#logger.info(`Pruned ${pruned.length} unavailable saved OMP chat(s)`);
+    }
     this.sidebar = new SessionSidebarProvider(extensionUri, {
-      createSession: async (draft) =>
+      createSession: async (draft, token) =>
         Boolean(
-          await this.newPrimarySession(draft.message, draft.images),
+          await this.newPrimarySession(draft.message, draft.images, token),
         ),
       focusSession: (id) => this.openSession(id),
+      closeSession: (id) => this.closeById(id),
+      restartSession: (id) => this.restartById(id),
+      removeSession: (id) => this.removeRecent(id),
       clearActiveSession: () => this.#clearActiveSession(),
       showLogs: () => this.#logger.show(),
-    });
+    }, workspaceState);
     this.#refresh();
     this.sidebar.setProfile({
       accessLabel: "Custom access",
       modelLabel: "Opus 5 · Extra High",
       modelDetail: "Opus 5 Extra High driver; GPT-5.6 Sol Extra High advisor configured",
     });
+    void this.#recoverUnusedEphemeralWorktrees();
   }
 
   get sessions(): readonly SessionPanel[] {
@@ -127,10 +157,24 @@ export class SessionManager implements vscode.Disposable {
     this.sidebar.focusComposer(true);
   }
 
+  setCreationBlock(detail: string | undefined): void {
+    this.#creationBlock = detail;
+    this.sidebar.setRuntimeNotice(detail);
+  }
+
   newPrimarySession(
     initialPrompt?: string,
     initialImages: readonly PromptImage[] = [],
+    initialPromptToken?: string,
   ): Promise<SessionPanel | undefined> {
+    if (this.#creationBlock) {
+      void vscode.window.showWarningMessage(this.#creationBlock, "Reload Window").then((choice) => {
+        if (choice === "Reload Window") {
+          void vscode.commands.executeCommand("workbench.action.reloadWindow");
+        }
+      });
+      return Promise.resolve(undefined);
+    }
     const prompt = initialPrompt;
     if (!prompt?.trim()) {
       this.focusNewSession();
@@ -145,6 +189,8 @@ export class SessionManager implements vscode.Disposable {
           undefined,
           prompt,
           initialImages,
+          undefined,
+          initialPromptToken,
         ),
       (reason) =>
         this.#logger.info(
@@ -161,10 +207,12 @@ export class SessionManager implements vscode.Disposable {
     initialPrompt?: string,
     initialImages: readonly PromptImage[] = [],
     resume?: RecentSessionRecord,
+    initialPromptToken?: string,
   ): Promise<SessionPanel | undefined> {
     if (!this.#acceptingSessions) {
       return Promise.resolve(undefined);
     }
+    if (this.#creationBlock) return Promise.resolve(undefined);
     const opening = this.#creationQueue.then(() =>
       this.#createSession(
         kind,
@@ -174,6 +222,7 @@ export class SessionManager implements vscode.Disposable {
         initialPrompt,
         initialImages,
         resume,
+        initialPromptToken,
       ),
     );
     this.#creationQueue = opening.then(
@@ -191,6 +240,7 @@ export class SessionManager implements vscode.Disposable {
     initialPrompt?: string,
     initialImages: readonly PromptImage[] = [],
     resume?: RecentSessionRecord,
+    initialPromptToken?: string,
   ): Promise<SessionPanel | undefined> {
     this.#logger.info(`New ${kind} ${transport} session requested`);
     let loopAlias = requestedLoopAlias?.trim();
@@ -227,6 +277,10 @@ export class SessionManager implements vscode.Disposable {
       }
     }
 
+    if (transport === "rpc" && !(await this.#ensureRpcCapacity())) {
+      return undefined;
+    }
+
     const directory = resume
       ? { cwd: resume.cwd, branch: resume.branch }
       : directoryMode === "choose"
@@ -243,11 +297,37 @@ export class SessionManager implements vscode.Disposable {
       await vscode.window.showErrorMessage(
         "OMP Sessions: Saved chat cannot be reopened because its exact worktree or OMP session file is missing.",
       );
+      this.#recent.remove(resume.id);
+      this.#refresh();
       return undefined;
     }
     this.#logger.info(
       `Selected ${kind} session directory ${directory.cwd}${directory.branch ? ` (${directory.branch})` : ""}`,
     );
+
+    let writerLease: WriterLease | undefined;
+    if (directory.ephemeralCleanupToken) {
+      const leaseAttempt = await acquireWriterLease(
+        directory.cwd,
+        "OMP session provisioning",
+      );
+      if (!leaseAttempt.acquired) {
+        await vscode.window.showWarningMessage(
+          "Fresh OMP worktree acquired another writer before launch; it was preserved.",
+          { modal: true },
+        );
+        return undefined;
+      }
+      writerLease = leaseAttempt.lease;
+    }
+    const cleanupSelectedDirectory = async (): Promise<void> => {
+      try {
+        await this.#cleanupDirectoryIfUnused(directory);
+      } finally {
+        await writerLease?.release();
+        writerLease = undefined;
+      }
+    };
 
     let projectLauncher;
     try {
@@ -256,6 +336,7 @@ export class SessionManager implements vscode.Disposable {
       this.#validatedLaunchers.delete(key);
       projectLauncher ??= await detectProjectLauncher(directory.cwd);
     } catch (error) {
+      await cleanupSelectedDirectory();
       await vscode.window.showErrorMessage(
         `OMP Sessions: ${
           error instanceof Error ? error.message : String(error)
@@ -269,6 +350,7 @@ export class SessionManager implements vscode.Disposable {
       Boolean(projectLauncher),
     );
     if (safety.blockReason) {
+      await cleanupSelectedDirectory();
       await vscode.window.showErrorMessage(
         `OMP Sessions: ${safety.blockReason}`,
       );
@@ -298,9 +380,11 @@ export class SessionManager implements vscode.Disposable {
             "Focus existing",
           );
           if (choice === "Focus existing") {
+            await cleanupSelectedDirectory();
             conflicting.reveal();
             return conflicting;
           }
+          await cleanupSelectedDirectory();
           return undefined;
         }
         const allowReadOnly = canOfferReadOnlyDowngrade(
@@ -319,12 +403,14 @@ export class SessionManager implements vscode.Disposable {
               "Focus existing",
             );
         if (choice === "Focus existing") {
+          await cleanupSelectedDirectory();
           conflicting.reveal();
           return conflicting;
         }
         if (choice === "Open read-only") {
           resolvedKind = "readonly";
         } else {
+          await cleanupSelectedDirectory();
           return undefined;
         }
       }
@@ -335,6 +421,7 @@ export class SessionManager implements vscode.Disposable {
       Boolean(projectLauncher),
     );
     if (finalSafety.blockReason) {
+      await cleanupSelectedDirectory();
       await vscode.window.showErrorMessage(
         `OMP Sessions: ${finalSafety.blockReason}`,
       );
@@ -348,20 +435,24 @@ export class SessionManager implements vscode.Disposable {
       (initialPrompt ? deriveSessionTitle(initialPrompt) : undefined) ??
       (kind === "readonly" ? "Read-only chat" : "New chat");
     const label = this.#uniqueLabel(baseLabel);
-    let writerLease: WriterLease | undefined;
     if (resolvedKind !== "readonly") {
-      const leaseAttempt = await acquireWriterLease(directory.cwd, label);
-      if (!leaseAttempt.acquired) {
-        const owner = leaseAttempt.owner;
-        await vscode.window.showWarningMessage(
-          owner
-            ? `Worktree already has writing session "${owner.label}" (PID ${owner.pid}). Open read-only or close existing owner first.`
-            : "Could not acquire cross-window writer lease for this Git worktree. Open read-only instead.",
-          { modal: true },
-        );
-        return undefined;
+      if (!writerLease) {
+        const leaseAttempt = await acquireWriterLease(directory.cwd, label);
+        if (!leaseAttempt.acquired) {
+          const owner = leaseAttempt.owner;
+          await vscode.window.showWarningMessage(
+            owner
+              ? `Worktree already has writing session "${owner.label}" (PID ${owner.pid}). Open read-only or close existing owner first.`
+              : "Could not acquire cross-window writer lease for this Git worktree. Open read-only instead.",
+            { modal: true },
+          );
+          return undefined;
+        }
+        writerLease = leaseAttempt.lease;
       }
-      writerLease = leaseAttempt.lease;
+    } else if (writerLease) {
+      await writerLease.release();
+      writerLease = undefined;
     }
     let launch;
     try {
@@ -380,7 +471,7 @@ export class SessionManager implements vscode.Disposable {
         ).fsPath,
       });
     } catch (error) {
-      await writerLease?.release();
+      await cleanupSelectedDirectory();
       await vscode.window.showErrorMessage(
         `OMP Sessions: ${
           error instanceof Error ? error.message : String(error)
@@ -389,8 +480,9 @@ export class SessionManager implements vscode.Disposable {
       return undefined;
     }
 
+    const sessionId = resume?.id ?? crypto.randomUUID();
     const spec: SessionSpec = {
-      id: resume?.id ?? crypto.randomUUID(),
+      id: sessionId,
       label,
       ...(loopAlias ? { loopAlias } : {}),
       cwd: directory.cwd,
@@ -409,6 +501,28 @@ export class SessionManager implements vscode.Disposable {
         (initialPrompt ? "provisional" : "runtime"),
       updatedAt: resume?.updatedAt,
       parity: launch.parity,
+      initialPromptToken,
+      onInitialPromptSettled: initialPromptToken
+        ? async (accepted) => {
+            await this.sidebar.acknowledgeDraft(initialPromptToken, accepted);
+          }
+        : undefined,
+      onFirstPromptAccepted: directory.ephemeralCleanupToken
+        ? () => this.#claimEphemeralWorktree(sessionId)
+        : undefined,
+      onFirstPromptStarted: directory.ephemeralCleanupToken
+        ? () => this.#reserveEphemeralWorktree(sessionId)
+        : undefined,
+      onFirstPromptRejected: directory.ephemeralCleanupToken
+        ? () => this.#releaseEphemeralWorktreeReservation(sessionId)
+        : undefined,
+      env:
+        directory.fetchedMainSha && directory.fetchedAtMs
+          ? {
+              DZIALKI_OMP_FETCHED_MAIN_SHA: directory.fetchedMainSha,
+              DZIALKI_OMP_FETCHED_MAIN_AT_MS: String(directory.fetchedAtMs),
+            }
+          : undefined,
     };
     this.#logger.info(
       `Starting "${label}" as ${resolvedKind}/${transport}; executable=${launch.executable}; projectLauncher=${projectLauncher ? "yes" : "no"}`,
@@ -426,8 +540,15 @@ export class SessionManager implements vscode.Disposable {
       );
     } catch (error) {
       this.#logger.error(`Failed to create "${label}"`, error);
-      await writerLease?.release();
+      await cleanupSelectedDirectory();
       throw error;
+    }
+    if (directory.ephemeralCleanupToken && directory.cleanupRoot) {
+      this.#ephemeralWorktrees.set(session.id, {
+        cwd: directory.cwd,
+        cleanupRoot: directory.cleanupRoot,
+        token: directory.ephemeralCleanupToken,
+      });
     }
     if (writerLease) {
       this.#writerLeases.set(session.id, writerLease);
@@ -570,6 +691,20 @@ export class SessionManager implements vscode.Disposable {
     (session ?? this.#active)?.dispose();
   }
 
+  async closeById(id: string): Promise<void> {
+    await this.#sessions.find((session) => session.id === id)?.shutdown();
+  }
+
+  async restartById(id: string): Promise<void> {
+    await this.#sessions.find((session) => session.id === id)?.restart();
+  }
+
+  removeRecent(id: string): void {
+    if (this.#sessions.some((session) => session.id === id)) return;
+    this.#recent.remove(id);
+    this.#refresh();
+  }
+
   async closeAll(): Promise<void> {
     await Promise.all(
       [...this.#sessions].map((session) => session.shutdown()),
@@ -586,9 +721,14 @@ export class SessionManager implements vscode.Disposable {
     if (!this.#shutdownPromise) {
       this.#acceptingSessions = false;
       this.#shutdownPromise = (async () => {
+        if (this.#orphanRecoveryTimer) {
+          clearTimeout(this.#orphanRecoveryTimer);
+          this.#orphanRecoveryTimer = undefined;
+        }
         await this.#creationQueue;
         await this.closeAll();
         await this.#recent.flush();
+        await this.sidebar.flush();
         this.sidebar.dispose();
       })();
     }
@@ -596,7 +736,7 @@ export class SessionManager implements vscode.Disposable {
   }
 
   async #pickDirectory(): Promise<
-    { cwd: string; branch?: string } | undefined
+    SessionDirectory | undefined
   > {
     const choices = await this.#directoryChoices();
     const selected = await vscode.window.showQuickPick(choices, {
@@ -627,7 +767,7 @@ export class SessionManager implements vscode.Disposable {
 
   async #automaticDirectory(
     kind: SessionKind,
-  ): Promise<{ cwd: string; branch?: string } | undefined> {
+  ): Promise<SessionDirectory | undefined> {
     const startedAt = Date.now();
     const roots = this.#workspaceRoots();
     const [worktrees, identity] = await Promise.all([
@@ -671,6 +811,9 @@ export class SessionManager implements vscode.Disposable {
       try {
         let validatedLauncher: ProjectLauncher | undefined;
         if (isDzialki) warmCanonicalDzialkiAdapterSnapshot();
+        const ephemeralCleanupToken = isDzialki
+          ? crypto.randomUUID()
+          : undefined;
         const created = await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Window,
@@ -681,6 +824,7 @@ export class SessionManager implements vscode.Disposable {
               baseRef: isDzialki ? "origin/main" : "HEAD",
               fetchOriginMain: isDzialki,
               configureHooks: isDzialki,
+              ephemeralCleanupToken,
               bootstrap: isDzialki
                 ? bootstrapWorktree
                 : async () => undefined,
@@ -710,7 +854,12 @@ export class SessionManager implements vscode.Disposable {
         this.#logger.info(
           `Created isolated ${plan.role} worktree ${created.cwd} (${created.branch})`,
         );
-        return created;
+        return {
+          ...created,
+          ...(ephemeralCleanupToken
+            ? { ephemeralCleanupToken, cleanupRoot: managementRoot }
+            : {}),
+        };
       } catch (error) {
         await vscode.window.showErrorMessage(
           `OMP Sessions: ${
@@ -829,8 +978,24 @@ export class SessionManager implements vscode.Disposable {
     );
     const lease = this.#writerLeases.get(session.id);
     this.#writerLeases.delete(session.id);
-    if (lease) {
-      await lease.release();
+    const ephemeral = this.#ephemeralWorktrees.get(session.id);
+    this.#ephemeralWorktrees.delete(session.id);
+    try {
+      if (ephemeral) {
+        this.#recent.remove(session.id);
+        await cleanupUnusedEphemeralWorktree(ephemeral);
+        this.#validatedLaunchers.delete(normalizedKey(ephemeral.cwd));
+        this.#logger.info(`Removed unused OMP worktree ${ephemeral.cwd}`);
+      }
+    } catch (error) {
+      if (ephemeral) {
+        this.#logger.error(
+          `Preserved OMP worktree after safe cleanup refused: ${ephemeral.cwd}`,
+          error,
+        );
+      }
+    } finally {
+      await lease?.release();
     }
     this.#sessions = this.#sessions.filter((candidate) => candidate !== session);
     if (this.#active === session) {
@@ -856,9 +1021,83 @@ export class SessionManager implements vscode.Disposable {
     return `${normalized} ${suffix}`;
   }
 
+  async #claimEphemeralWorktree(sessionId: string): Promise<void> {
+    const ephemeral = this.#ephemeralWorktrees.get(sessionId);
+    if (!ephemeral) return;
+    const claimed = await claimEphemeralWorktree(ephemeral.cwd, ephemeral.token);
+    this.#ephemeralWorktrees.delete(sessionId);
+    if (claimed) {
+      this.#logger.info(`OMP worktree became durable: ${ephemeral.cwd}`);
+    } else {
+      this.#logger.error(
+        `OMP worktree prompt was accepted but ownership marker could not be removed; preserving ${ephemeral.cwd}`,
+      );
+    }
+    this.#refresh();
+  }
+
+  async #reserveEphemeralWorktree(sessionId: string): Promise<void> {
+    const ephemeral = this.#ephemeralWorktrees.get(sessionId);
+    if (!ephemeral) return;
+    if (!(await reserveEphemeralWorktree(ephemeral.cwd, ephemeral.token))) {
+      throw new Error("ephemeral worktree ownership marker could not enter prompting phase");
+    }
+  }
+
+  async #releaseEphemeralWorktreeReservation(sessionId: string): Promise<void> {
+    const ephemeral = this.#ephemeralWorktrees.get(sessionId);
+    if (!ephemeral) return;
+    if (!(await releaseEphemeralWorktreeReservation(ephemeral.cwd, ephemeral.token))) {
+      this.#logger.error(
+        `Could not return failed first prompt marker to unused phase; preserving ${ephemeral.cwd}`,
+      );
+      this.#ephemeralWorktrees.delete(sessionId);
+      this.#refresh();
+    }
+  }
+
+  async #cleanupDirectoryIfUnused(directory: SessionDirectory): Promise<void> {
+    if (!directory.ephemeralCleanupToken || !directory.cleanupRoot) return;
+    try {
+      await cleanupUnusedEphemeralWorktree({
+        cwd: directory.cwd,
+        cleanupRoot: directory.cleanupRoot,
+        token: directory.ephemeralCleanupToken,
+      });
+      this.#validatedLaunchers.delete(normalizedKey(directory.cwd));
+    } catch (error) {
+      this.#logger.error(
+        `Preserved OMP worktree after safe cleanup refused: ${directory.cwd}`,
+        error,
+      );
+    }
+  }
+
+  async #ensureRpcCapacity(): Promise<boolean> {
+    const live = this.#sessions.filter((session) => session.transport === "rpc");
+    if (live.length < MAX_LIVE_RPC_SESSIONS) return true;
+    const candidate = live
+      .filter((session) =>
+        !session.active &&
+        Boolean(session.sessionFile) &&
+        ["idle", "finished", "failed"].includes(session.status),
+      )
+      .sort((left, right) => left.updatedAt - right.updatedAt)[0];
+    if (candidate) {
+      this.#logger.info(`Suspending idle OMP chat "${candidate.label}" at process cap`);
+      await candidate.shutdown();
+      return true;
+    }
+    await vscode.window.showWarningMessage(
+      `OMP Sessions: ${MAX_LIVE_RPC_SESSIONS} sessions are already live. Close an idle chat before starting another.`,
+    );
+    return false;
+  }
+
   #refresh(): void {
     for (const session of this.#sessions) {
       if (!session.sessionFile || session.transport !== "rpc") continue;
+      if (this.#ephemeralWorktrees.has(session.id)) continue;
       this.#recent.upsert({
         id: session.id,
         label: session.label,
@@ -902,6 +1141,79 @@ export class SessionManager implements vscode.Disposable {
       "ohMyPiSessions.hasSessions",
       this.#sessions.length > 0,
     );
+  }
+
+  async #recoverUnusedEphemeralWorktrees(): Promise<void> {
+    if (this.#orphanRecoveryRunning || !this.#acceptingSessions) return;
+    this.#orphanRecoveryRunning = true;
+    let nextDelay: number | undefined;
+    try {
+      const roots = this.#workspaceRoots();
+      const identity = await repositoryIdentity(roots[0]);
+      if (!identity || !canonicalDzialkiOrigin(identity.origin)) return;
+      const worktrees = await this.#discoverWorktrees(roots);
+      const cleanupRoot = provisionManagementRoot({
+        currentRepositoryRoot: identity.root,
+        worktrees,
+        canonicalDzialki: true,
+      });
+      if (!cleanupRoot) return;
+      const now = Date.now();
+      const liveEphemeralPaths = new Set(
+        [...this.#ephemeralWorktrees.values()].map((entry) =>
+          normalizedKey(entry.cwd),
+        ),
+      );
+      for (const worktree of worktrees) {
+        if (sameDirectory(worktree.path, cleanupRoot)) continue;
+        if (liveEphemeralPaths.has(normalizedKey(worktree.path))) continue;
+        const marker = await readEphemeralWorktreeMarker(worktree.path);
+        if (!marker) continue;
+        const remaining = ORPHAN_RECOVERY_MIN_AGE_MS -
+          (now - Date.parse(marker.createdAt));
+        if (remaining > 0) {
+          nextDelay = Math.min(nextDelay ?? remaining, remaining);
+          continue;
+        }
+        const recoveryLease = await acquireWriterLease(
+          worktree.path,
+          "abandoned OMP worktree recovery",
+        );
+        if (!recoveryLease.acquired) continue;
+        try {
+          await cleanupUnusedEphemeralWorktree({
+            cwd: worktree.path,
+            cleanupRoot,
+            token: marker.token,
+          });
+          this.#validatedLaunchers.delete(normalizedKey(worktree.path));
+          this.#logger.info(
+            `Recovered abandoned unused OMP worktree ${worktree.path}`,
+          );
+        } catch (error) {
+          this.#logger.error(
+            `Preserved candidate abandoned worktree after proof failed: ${worktree.path}`,
+            error,
+          );
+        } finally {
+          await recoveryLease.lease.release();
+        }
+      }
+    } catch (error) {
+      this.#logger.error("OMP abandoned-worktree recovery scan failed", error);
+    } finally {
+      this.#orphanRecoveryRunning = false;
+      if (
+        nextDelay !== undefined &&
+        this.#acceptingSessions &&
+        !this.#orphanRecoveryTimer
+      ) {
+        this.#orphanRecoveryTimer = setTimeout(() => {
+          this.#orphanRecoveryTimer = undefined;
+          void this.#recoverUnusedEphemeralWorktrees();
+        }, Math.max(1_000, nextDelay + 250));
+      }
+    }
   }
 
 }

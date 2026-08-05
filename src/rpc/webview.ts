@@ -100,6 +100,8 @@ root.innerHTML = `
         <button id="sessions-button" class="icon-button" type="button" title="Back to chats" aria-label="Back to chats">
           <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M12.5 4.5 7 10l5.5 5.5M7.5 10H16" /></svg>
         </button>
+        <button id="restart-session-button" class="icon-button" type="button" title="Restart chat runtime" aria-label="Restart chat runtime">&#x21bb;</button>
+        <button id="close-session-button" class="icon-button" type="button" title="Close chat" aria-label="Close chat">&#xd7;</button>
         <button id="settings-button" class="icon-button" type="button" title="Open OMP settings" aria-label="Open OMP settings">
           <svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 3.3v1.4M10 15.3v1.4M3.3 10h1.4M15.3 10h1.4M5.25 5.25l1 1M13.75 13.75l1 1M14.75 5.25l-1 1M6.25 13.75l-1 1" /></svg>
         </button>
@@ -173,6 +175,8 @@ const actionsButton = requireButton("actions-button");
 const sessionsButton = requireButton("sessions-button");
 const settingsButton = requireButton("settings-button");
 const newSessionButton = requireButton("new-session-button");
+const restartSessionButton = requireButton("restart-session-button");
+const closeSessionButton = requireButton("close-session-button");
 const commandMenu = requireElement("command-menu");
 const actionsMenu = requireElement("actions-menu");
 const requestLayer = requireElement("request-layer");
@@ -275,6 +279,8 @@ abortButton.addEventListener("click", () => post({ type: "abort" }));
 sessionsButton.addEventListener("click", () => post({ type: "showSessions" }));
 settingsButton.addEventListener("click", () => post({ type: "openSettings" }));
 newSessionButton.addEventListener("click", () => post({ type: "newSession" }));
+restartSessionButton.addEventListener("click", () => post({ type: "restartCurrentSession" }));
+closeSessionButton.addEventListener("click", () => post({ type: "closeCurrentSession" }));
 actionsButton.addEventListener("click", () => {
   actionsMenu.hidden = !actionsMenu.hidden;
   actionsButton.setAttribute("aria-expanded", String(!actionsMenu.hidden));

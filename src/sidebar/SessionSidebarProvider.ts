@@ -12,6 +12,7 @@ import {
 } from "./messages";
 import { buildSidebarHtml } from "./sidebarHtml";
 import { SelectedSessionRouter } from "./SelectedSessionRouter";
+import { PendingDraftStore } from "./PendingDraftStore";
 import { messageMatchesSurface, tagSurfaceMessage } from "./surfaceRouting";
 
 export type SidebarSession = {
@@ -31,8 +32,11 @@ export type SidebarProfile = {
 };
 
 type SidebarCallbacks = {
-  createSession: (draft: PromptDraft) => Promise<boolean>;
+  createSession: (draft: PromptDraft, token: string) => Promise<boolean>;
   focusSession: (id: string) => Promise<void> | void;
+  closeSession: (id: string) => Promise<void> | void;
+  restartSession: (id: string) => Promise<void> | void;
+  removeSession: (id: string) => Promise<void> | void;
   clearActiveSession: () => void;
   showLogs: () => void;
 };
@@ -48,6 +52,11 @@ export class SessionSidebarProvider
   #creating = false;
   #homeDraft = "";
   #homeImages: PromptImage[] = [];
+  readonly #pendingDrafts: PendingDraftStore;
+  #draftToken = randomBytes(16).toString("hex");
+  #pendingDelivery = false;
+  #runtimeNotice: string | undefined;
+  #draftTimer: NodeJS.Timeout | undefined;
   #surfaceToken = "";
   readonly #router = new SelectedSessionRouter<vscode.Webview, RpcSessionHost>();
   readonly #focusQueue = new SidebarFocusQueue();
@@ -57,20 +66,35 @@ export class SessionSidebarProvider
     modelDetail: "Opus 5 Extra High driver; GPT-5.6 Sol Extra High advisor configured",
   };
   #disposables: vscode.Disposable[] = [];
+  #viewDisposables: vscode.Disposable[] = [];
 
-  constructor(extensionUri: vscode.Uri, callbacks: SidebarCallbacks) {
+  constructor(
+    extensionUri: vscode.Uri,
+    callbacks: SidebarCallbacks,
+    workspaceState: vscode.Memento,
+  ) {
     this.#extensionUri = extensionUri;
     this.#callbacks = callbacks;
+    this.#pendingDrafts = new PendingDraftStore(workspaceState);
+    const pending = this.#pendingDrafts.load();
+    if (pending) {
+      this.#draftToken = pending.token;
+      this.#homeDraft = pending.message;
+      this.#homeImages = [...pending.images];
+    }
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
+    for (const disposable of this.#viewDisposables) disposable.dispose();
+    this.#viewDisposables = [];
     this.#view = view;
     this.#ready = false;
-    this.#disposables.push(
+    this.#viewDisposables.push(
       view.webview.onDidReceiveMessage((raw) => {
         void this.#handleMessage(raw);
       }),
       view.onDidDispose(() => {
+        if (this.#view !== view) return;
         this.#router.selected?.host.detachWebview(view.webview);
         this.#view = undefined;
         this.#ready = false;
@@ -103,8 +127,12 @@ export class SessionSidebarProvider
 
   showHome(clearDraft = false): void {
     if (clearDraft) {
+      const staleToken = this.#draftToken;
       this.#homeDraft = "";
       this.#homeImages = [];
+      this.#pendingDelivery = false;
+      this.#draftToken = randomBytes(16).toString("hex");
+      void this.#pendingDrafts.clear(staleToken);
     }
     const changed = Boolean(this.#router.selected);
     this.#detachConversation();
@@ -130,10 +158,43 @@ export class SessionSidebarProvider
 
   dispose(): void {
     this.#detachConversation();
+    for (const disposable of this.#viewDisposables) disposable.dispose();
+    this.#viewDisposables = [];
     for (const disposable of this.#disposables) disposable.dispose();
     this.#disposables = [];
     this.#view = undefined;
     this.#ready = false;
+    if (this.#draftTimer) clearTimeout(this.#draftTimer);
+  }
+
+  async flush(): Promise<void> {
+    if (this.#draftTimer) {
+      clearTimeout(this.#draftTimer);
+      this.#draftTimer = undefined;
+    }
+    await this.#persistDraftNow();
+    await this.#pendingDrafts.flush();
+  }
+
+  setRuntimeNotice(detail: string | undefined): void {
+    if (this.#runtimeNotice === detail) return;
+    this.#runtimeNotice = detail;
+    if (detail && this.#router.selected) {
+      this.#router.selected.host.showHostNotice(detail);
+    }
+    void this.#postHomeState();
+  }
+
+  async acknowledgeDraft(token: string, accepted: boolean): Promise<void> {
+    if (token !== this.#draftToken) return;
+    this.#pendingDelivery = false;
+    if (accepted) {
+      await this.#pendingDrafts.clear(token);
+      this.#homeDraft = "";
+      this.#homeImages = [];
+      this.#draftToken = randomBytes(16).toString("hex");
+    }
+    await this.#postHomeState();
   }
 
   async #handleMessage(raw: unknown): Promise<void> {
@@ -145,6 +206,14 @@ export class SessionSidebarProvider
       }
       if (isMessageType(raw, "newSession")) {
         this.showHome(true);
+        return;
+      }
+      if (isMessageType(raw, "restartCurrentSession")) {
+        await this.#callbacks.restartSession(this.#router.selected.id);
+        return;
+      }
+      if (isMessageType(raw, "closeCurrentSession")) {
+        await this.#callbacks.closeSession(this.#router.selected.id);
         return;
       }
       await this.#router.dispatch(raw);
@@ -170,9 +239,11 @@ export class SessionSidebarProvider
         return;
       case "draftChanged":
         this.#homeDraft = message.draft;
+        this.#scheduleDraftPersistence();
         return;
       case "attachmentsChanged":
         this.#homeImages = message.images;
+        this.#scheduleDraftPersistence();
         return;
       case "showLogs":
         this.#callbacks.showLogs();
@@ -185,6 +256,18 @@ export class SessionSidebarProvider
         return;
       case "focusSession":
         await this.#callbacks.focusSession(message.id);
+        return;
+      case "reloadWindow":
+        await vscode.commands.executeCommand("workbench.action.reloadWindow");
+        return;
+      case "closeSession":
+        await this.#callbacks.closeSession(message.id);
+        return;
+      case "restartSession":
+        await this.#callbacks.restartSession(message.id);
+        return;
+      case "removeSession":
+        await this.#callbacks.removeSession(message.id);
         return;
       case "createSession":
         await this.#createSession({
@@ -200,13 +283,19 @@ export class SessionSidebarProvider
     this.#creating = true;
     this.#homeDraft = draft.message;
     this.#homeImages = draft.images;
+    const token = this.#draftToken;
+    await this.#pendingDrafts.save({
+      token,
+      message: draft.message,
+      images: draft.images,
+      updatedAt: Date.now(),
+    });
+    this.#pendingDelivery = true;
     await this.#postHomeState();
     try {
-      const created = await this.#callbacks.createSession(draft);
-      if (created) {
-        this.#homeDraft = "";
-        this.#homeImages = [];
-      } else {
+      const created = await this.#callbacks.createSession(draft, token);
+      if (!created) {
+        this.#pendingDelivery = false;
         await this.#post({
           type: "sessionCreationFailed",
           draft: draft.message,
@@ -215,6 +304,7 @@ export class SessionSidebarProvider
         });
       }
     } catch (error) {
+      this.#pendingDelivery = false;
       await this.#post({
         type: "sessionCreationFailed",
         draft: draft.message,
@@ -225,6 +315,27 @@ export class SessionSidebarProvider
       this.#creating = false;
       await this.#postHomeState();
     }
+  }
+
+  #scheduleDraftPersistence(): void {
+    if (this.#draftTimer) clearTimeout(this.#draftTimer);
+    this.#draftTimer = setTimeout(() => {
+      this.#draftTimer = undefined;
+      void this.#persistDraftNow();
+    }, 250);
+  }
+
+  async #persistDraftNow(): Promise<void> {
+    if (!this.#homeDraft.trim() && this.#homeImages.length === 0) {
+      await this.#pendingDrafts.clear(this.#draftToken);
+      return;
+    }
+    await this.#pendingDrafts.save({
+      token: this.#draftToken,
+      message: this.#homeDraft,
+      images: this.#homeImages,
+      updatedAt: Date.now(),
+    });
   }
 
   #renderSurface(): void {
@@ -259,8 +370,9 @@ export class SessionSidebarProvider
     if (this.#router.selected || !this.#ready) return Promise.resolve(false);
     return this.#post({
       type: "state",
-      creating: this.#creating,
+      creating: this.#creating || this.#pendingDelivery,
       profile: this.#profile,
+      runtimeNotice: this.#runtimeNotice,
       sessions: this.#sessions.map(toSidebarSessionPayload),
     });
   }
