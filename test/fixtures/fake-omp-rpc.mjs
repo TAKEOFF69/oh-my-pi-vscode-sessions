@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 const badReady = process.argv.includes("--bad-ready");
 const badNegotiation = process.argv.includes("--bad-negotiation");
 const spawnDescendant = process.argv.includes("--spawn-descendant");
+const approvalRequest = process.argv.includes("--approval-request");
 
 const write = (frame) => {
   process.stdout.write(`${JSON.stringify(frame)}\n`);
@@ -113,13 +114,24 @@ input.on("line", (line) => {
         content: [{ type: "text", text: "Working\n\nDone." }],
       },
     });
-    write({
-      type: "extension_ui_request",
-      id: "confirm-1",
-      method: "confirm",
-      title: "Continue?",
-      message: "Exercise UI round trip",
-    });
+    write(
+      approvalRequest
+        ? {
+            type: "extension_ui_request",
+            id: "approval-1",
+            method: "select",
+            title: "Allow tool: bash",
+            message: "Command: git status --short",
+            options: ["Approve", "Deny"],
+          }
+        : {
+            type: "extension_ui_request",
+            id: "confirm-1",
+            method: "confirm",
+            title: "Continue?",
+            message: "Exercise UI round trip",
+          },
+    );
     write({
       type: "agent_end",
     });

@@ -23,7 +23,10 @@ import {
   validateRpcRuntimeConfigFrame,
 } from "./parity";
 import { InitialPromptOwnership } from "./initialPromptOwnership";
-import { classifyPreParityFrame } from "./preParity";
+import {
+  classifyPreParityFrame,
+  enforceToolApprovalTripwire,
+} from "./preParity";
 import { PromptLifecycle } from "./promptLifecycle";
 import { buildRpcPromptCommand } from "./promptCommand";
 import { tagSurfaceMessage } from "../sidebar/surfaceRouting";
@@ -632,6 +635,18 @@ export class RpcSessionHost implements SessionHost {
       }
       return;
     }
+    if (enforceToolApprovalTripwire(this.#parity?.name, frame, {
+      cancel: (request) =>
+        this.#cancelExtensionUiRequest(
+          request,
+          "unexpected native tool approval",
+        ),
+      block: (detail) => {
+        this.#blockParity(detail);
+      },
+    })) {
+      return;
+    }
     if (!this.#validateRuntimeConfig(frame)) return;
     this.#observeRpcFrame(frame);
     this.#handleRpcFrame(frame);
@@ -654,6 +669,10 @@ export class RpcSessionHost implements SessionHost {
   }
 
   #rejectPreParityUiRequest(frame: RpcFrame): void {
+    this.#cancelExtensionUiRequest(frame, "pre-parity extension UI request");
+  }
+
+  #cancelExtensionUiRequest(frame: RpcFrame, reason: string): void {
     const id = typeof frame.id === "string" ? frame.id : "";
     if (id && this.#rpc?.running) {
       this.#rpc.send({
@@ -663,7 +682,7 @@ export class RpcSessionHost implements SessionHost {
       });
     }
     this.#logger.info(
-      `Rejected pre-parity extension UI request for "${this.#label}"`,
+      `Cancelled ${reason} for "${this.#label}"`,
     );
   }
 
@@ -993,6 +1012,7 @@ export class RpcSessionHost implements SessionHost {
         ? "Configured: GPT-5.6 Sol · Extra High"
         : "OMP project policy",
       parityRequired: Boolean(this.#parity),
+      trustedProjectPolicy: this.#parity?.name.startsWith("dzialki-") === true,
     }, attachmentRevision);
   }
 

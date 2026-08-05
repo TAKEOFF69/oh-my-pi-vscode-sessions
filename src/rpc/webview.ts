@@ -138,7 +138,7 @@ root.innerHTML = `
             <button id="actions-button" class="composer-plus" type="button" title="Chat actions" aria-label="Chat actions" aria-expanded="false">+</button>
             <div class="access-status" title="Tool access selected by OMP project policy">
               <svg aria-hidden="true" viewBox="0 0 18 18"><path d="M9 2.5l5 2v3.8c0 3.2-2 5.7-5 7.2-3-1.5-5-4-5-7.2V4.5z"/><path d="M7.1 8.8l1.3 1.3 2.7-2.8"/></svg>
-              <span id="access-label">Full access</span>
+              <span id="access-label">Custom access</span>
             </div>
             <div id="composer-status" class="composer-status">RPC starting</div>
             <button id="follow-button" class="button quiet" type="button" hidden>Follow up</button>
@@ -638,7 +638,10 @@ function accessLabel(): string {
   ) {
     return "Checking access";
   }
-  if (state.runtime.parityRequired === true) {
+  if (
+    state.runtime.parityRequired === true &&
+    state.runtime.trustedProjectPolicy === true
+  ) {
     if (state.runtime.kind === "readonly") {
       return "Read only";
     }
@@ -671,6 +674,9 @@ function renderEmpty(): string {
 }
 
 function renderMessage(message: UiMessage): string {
+  if (message.display === false) {
+    return "";
+  }
   if (message.role === "toolResult" && !message.isError) {
     return "";
   }
@@ -702,7 +708,7 @@ function renderActivity(
       ? `Working · ${count} step${count === 1 ? "" : "s"}`
       : `Activity · ${count} step${count === 1 ? "" : "s"}`;
   return `
-    <details class="activity"${failed > 0 || activityExpanded ? " open" : ""}>
+    <details class="activity"${activityExpanded ? " open" : ""}>
       <summary>${escapeHtml(summary)}</summary>
       <div class="activity-body">
         ${Object.keys(state.statuses).length > 0 || Object.keys(state.widgets).length > 0 ? renderExtensionSurfaces() : ""}
