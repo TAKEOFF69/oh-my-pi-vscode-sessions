@@ -16,7 +16,7 @@ Generic core does not claim those guarantees unless policy detection and parity 
 
 ## Built-in Dzialkopedia policy
 
-Version 2.5.1 still ships one built-in Dzialkopedia adapter. It is isolated by exact canonical Git
+Version 2.5.2 still ships one built-in Dzialkopedia adapter. It is isolated by exact canonical Git
 origin and fails closed unless repository launcher and declared adapter inventory match canonical
 GitHub `main`. Its source-visible origin, control-file names, protocol identifiers, and test fixtures
 are integration metadata, not credentials.
@@ -35,3 +35,5 @@ canonical-byte verification. Until then, changes to built-in adapter require its
 5. Credentials remain outside adapter and repository.
 6. Generic UI labels unverified policy as `Custom access`, never `Full access`.
 7. Project-specific tests use synthetic paths and redacted fixtures.
+8. A verified no-popup adapter must cancel and terminate on any unexpected native tool-approval
+   request; it never auto-clicks an approval card.

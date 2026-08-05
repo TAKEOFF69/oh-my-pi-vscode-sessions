@@ -79,6 +79,7 @@ export type UiRuntimeState = {
   transport: "starting" | "ready" | "exited" | "failed";
   parity: "pending" | "passed" | "failed" | "not-required";
   parityRequired?: boolean;
+  trustedProjectPolicy?: boolean;
   parityDetail?: string;
   cwd?: string;
   branch?: string;
@@ -178,6 +179,7 @@ export function countFoldedActivity(
   const visibleKeys = new Set(visibleMessages.map((message) => message.key));
   const hiddenMessages = messages.filter(
     (message) =>
+      message.display !== false &&
       !visibleKeys.has(message.key) &&
       (message.role === "advisory" ||
         message.role === "developer" ||
@@ -392,6 +394,7 @@ export function applyHostFrame(
       next.runtime.kind = stringValue(raw.kind);
       next.runtime.advisorLabel = stringValue(raw.advisorLabel);
       next.runtime.parityRequired = raw.parityRequired !== false;
+      next.runtime.trustedProjectPolicy = raw.trustedProjectPolicy === true;
       next.runtime.parity =
         raw.parityRequired === false ? "not-required" : "pending";
       return next;
@@ -407,18 +410,30 @@ export function applyHostFrame(
       }
       return next;
     case "parity":
+      {
+      const previousDetail = next.runtime.parityDetail;
       next.runtime.parity =
         raw.ok === true ? "passed" : "failed";
-      next.runtime.parityDetail = stringValue(raw.detail);
+      const incomingDetail = stringValue(raw.detail);
+      next.runtime.parityDetail =
+        raw.ok !== true &&
+        incomingDetail === "Runtime parity has not passed" &&
+        previousDetail
+          ? previousDetail
+          : incomingDetail;
       if (raw.ok !== true) {
+        next.notices = next.notices.filter(
+          (notice) => notice.title !== "Runtime parity blocked",
+        );
         addNotice(
           next,
           "error",
           "Runtime parity blocked",
-          stringValue(raw.detail),
+          next.runtime.parityDetail,
         );
       }
       return next;
+      }
     case "stderr":
       addNotice(next, "info", "Launcher", stringValue(raw.text));
       return next;
@@ -589,18 +604,47 @@ function normalizeMessage(
   const customType = stringValue(message.customType);
   const rawContent = message.content;
   const role = normalizeRole(rawRole, customType, rawContent);
+  const content = normalizeContent(rawContent);
+  const hiddenRuntimeMessage = isHiddenRuntimeMessage(
+    rawRole,
+    customType,
+    content,
+  );
   return {
     key,
     role,
-    content: normalizeContent(rawContent),
+    content,
     model: stringValue(message.model) || undefined,
     timestamp:
       typeof message.timestamp === "number" ? message.timestamp : undefined,
     streaming,
     isError: message.isError === true,
     customType: customType || undefined,
-    display: typeof message.display === "boolean" ? message.display : undefined,
+    display:
+      typeof message.display === "boolean"
+        ? message.display
+        : hiddenRuntimeMessage
+          ? false
+          : undefined,
   };
+}
+
+function isHiddenRuntimeMessage(
+  rawRole: string,
+  customType: string,
+  content: readonly UiContentBlock[],
+): boolean {
+  if (customType === "xdev-mount-notice") return true;
+  if (rawRole !== "custom") return false;
+  const text = content
+    .filter((block): block is Extract<UiContentBlock, { type: "text" }> =>
+      block.type === "text",
+    )
+    .map((block) => block.text)
+    .join("\n");
+  return /<system-notice>[\s\S]*The xd:\/\/ device inventory changed\./i.test(
+    text,
+  );
 }
 
 function normalizeRole(

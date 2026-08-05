@@ -20,8 +20,8 @@ Errors, parity failures, and extension requests that require operator action rem
 | Reasoning | Not exposed as ordinary chat | Fold into activity; never open by default |
 | Advisor | Influences answer without becoming a second conversation | Fold advisory messages into activity |
 | Model identity | One truthful footer label | OMP runtime state in composer footer only |
-| Failures | Actionable and impossible to miss | Keep error notices and failed tool summary visible |
-| Extension requests | Operator can answer prompt/confirm/select | Keep request overlay unchanged |
+| Failures | Actionable without reopening the process dump | Keep failed count visible; details remain user-expandable |
+| Extension requests | Operator can answer genuine workflow input | Keep ordinary prompt/confirm/select overlay; trusted no-popup tool approvals fail closed |
 
 ## Data provenance
 
@@ -39,9 +39,9 @@ presentation; raw OMP session history remains authoritative and available to the
 
 - A turn containing interim narration, reasoning, advisor messages, and tool calls renders one user
   message, one final assistant answer, and one closed activity disclosure.
-- Successful tool results and tool inventory dumps are absent from the default transcript.
-- Failed tools, parity failure, transport failure, retry exhaustion, and pending extension requests
-  remain visible.
+- Successful tool results and hidden `xdev-mount-notice` inventory dumps are absent from transcript.
+- Failed-tool count, parity failure, transport failure, retry exhaustion, and genuine pending
+  extension requests remain visible without automatically opening Activity.
 - History hydration and live streaming produce the same presentation.
 - Long histories keep bounded incremental rendering and no horizontal overflow at sidebar width.
 - Browser screenshot inspection confirms no repeated Assistant/model labels or open process ledger.

@@ -36,7 +36,7 @@ Generic OMP sessions do not require Dzialkopedia or another private repository. 
 RPC transport, single-sidebar presentation, session lifecycle, process reaping, writer leases, and
 editor context. Unverified generic sessions are labelled `Custom access`.
 
-Version 2.5.1 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
+Version 2.5.2 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
 Git origin and is fail-closed. Adapter source exposes repository identity, control-file names, and
 protocol identifiers, but contains no credentials. This is currently runtime separation, not yet
 separate packaging; see [project-policy boundary](docs/project-policy-boundary.md).
@@ -209,7 +209,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension oh-my-pi-vscode-sessions-2.5.1.vsix --force
+code --install-extension oh-my-pi-vscode-sessions-2.5.2.vsix --force
 ```
 
 ## Current boundary

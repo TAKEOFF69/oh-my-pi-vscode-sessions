@@ -109,7 +109,7 @@ export class SessionManager implements vscode.Disposable {
     });
     this.#refresh();
     this.sidebar.setProfile({
-      accessLabel: "Full access",
+      accessLabel: "Custom access",
       modelLabel: "Opus 5 · Extra High",
       modelDetail: "Opus 5 Extra High driver; GPT-5.6 Sol Extra High advisor configured",
     });

@@ -17,6 +17,7 @@ test("webview reducer hydrates state and exact runtime surface", () => {
     branch: "wip/arc",
     sessionName: "Inspect RCN classifier",
     kind: "work",
+    trustedProjectPolicy: true,
     advisorLabel: "Sol · xhigh",
   });
   state = reduceRpcFrame(state, {
@@ -38,6 +39,7 @@ test("webview reducer hydrates state and exact runtime surface", () => {
   assert.equal(state.runtime.cwd, "C:\\work\\arc");
   assert.equal(state.runtime.sessionName, "Inspect RCN classifier");
   assert.equal(state.runtime.parityRequired, true);
+  assert.equal(state.runtime.trustedProjectPolicy, true);
   assert.deepEqual(state.runtime.tools, ["read", "edit"]);
 });
 
@@ -46,11 +48,13 @@ test("webview reducer keeps generic runtime parity explicitly untrusted", () => 
   state = applyHostFrame(state, {
     type: "bootstrap",
     kind: "work",
-    parityRequired: false,
+    parityRequired: true,
+    trustedProjectPolicy: false,
   });
   state = applyHostFrame(state, { type: "parity", ok: true });
 
-  assert.equal(state.runtime.parityRequired, false);
+  assert.equal(state.runtime.parityRequired, true);
+  assert.equal(state.runtime.trustedProjectPolicy, false);
   assert.equal(state.runtime.parity, "passed");
 });
 
@@ -236,6 +240,18 @@ test("webview reducer exposes retries, compaction, and parity failure", () => {
   assert.equal(state.runtime.isCompacting, true);
   assert.equal(state.runtime.parity, "failed");
   assert.ok(state.notices.some((notice) => notice.title === "Runtime parity blocked"));
+  const originalDetail = state.runtime.parityDetail;
+  state = applyHostFrame(state, {
+    type: "parity",
+    ok: false,
+    detail: "Runtime parity has not passed",
+  });
+  assert.equal(
+    state.notices.filter((notice) => notice.title === "Runtime parity blocked")
+      .length,
+    1,
+  );
+  assert.equal(state.runtime.parityDetail, originalDetail);
 });
 
 test("nonterminal agent_end keeps continuation streaming", () => {
@@ -359,4 +375,64 @@ test("chat projection hides synthetic runtime prompts and transient history busy
     ],
   );
   assert.equal(state.notices.length, 0);
+});
+
+test("chat projection suppresses hidden xdev inventory even when RPC omits display", () => {
+  let state = createInitialWebviewState();
+  state = reduceRpcFrame(state, {
+    type: "response",
+    command: "get_messages",
+    success: true,
+    data: {
+      messages: [
+        { role: "user", content: "TL;DR" },
+        {
+          role: "assistant",
+          customType: "xdev-mount-notice",
+          content:
+            "<system-notice>\nThe xd:// device inventory changed.\n- xd://mcp__telegram_send_message\n</system-notice>",
+        },
+        { role: "assistant", content: "The work is ready." },
+      ],
+    },
+  });
+
+  assert.equal(state.messages[1]?.display, false);
+  assert.deepEqual(
+    selectChatMessages(state.messages).map((message) => message.content),
+    [
+      [{ type: "text", text: "TL;DR" }],
+      [{ type: "text", text: "The work is ready." }],
+    ],
+  );
+  assert.equal(
+    countFoldedActivity(
+      state.messages,
+      selectChatMessages(state.messages),
+      state.tools,
+      state.subagents,
+    ),
+    0,
+  );
+});
+
+test("user quoting xdev notice text remains visible", () => {
+  let state = createInitialWebviewState();
+  state = reduceRpcFrame(state, {
+    type: "response",
+    command: "get_messages",
+    success: true,
+    data: {
+      messages: [
+        {
+          role: "user",
+          content:
+            "Why did I see <system-notice>The xd:// device inventory changed.</system-notice>?",
+        },
+        { role: "assistant", content: "That was hidden runtime metadata." },
+      ],
+    },
+  });
+  assert.equal(state.messages[0]?.display, undefined);
+  assert.equal(selectChatMessages(state.messages).length, 2);
 });

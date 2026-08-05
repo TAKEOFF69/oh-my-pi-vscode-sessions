@@ -158,6 +158,63 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
         assert page.get_by_text("Dzialkopedia project policy loaded", exact=True).is_hidden()
         assert page.get_by_text("dzialki-model-lock", exact=True).is_hidden()
 
+        dispatch_frame(
+            page,
+            {
+                "type": "rpc",
+                "frame": {
+                    "type": "message_start",
+                    "message": {
+                        "role": "custom",
+                        "customType": "xdev-mount-notice",
+                        "content": (
+                            "<system-notice>\n"
+                            "The xd:// device inventory changed.\n"
+                            "- xd://mcp__telegram_send_message\n"
+                            "</system-notice>"
+                        ),
+                    },
+                },
+            },
+        )
+        dispatch_frame(
+            page,
+            {
+                "type": "rpc",
+                "frame": {
+                    "type": "message_end",
+                    "message": {
+                        "role": "custom",
+                        "customType": "xdev-mount-notice",
+                        "content": (
+                            "<system-notice>\n"
+                            "The xd:// device inventory changed.\n"
+                            "- xd://mcp__telegram_send_message\n"
+                            "</system-notice>"
+                        ),
+                    },
+                },
+            },
+        )
+        dispatch_frame(
+            page,
+            {
+                "type": "rpc",
+                "frame": {
+                    "type": "tool_execution_end",
+                    "toolCallId": "tool-read-failed",
+                    "toolName": "read",
+                    "result": {"error": "missing session dossier"},
+                    "isError": True,
+                },
+            },
+        )
+        assert page.get_by_text("mcp__telegram_send_message", exact=False).count() == 0
+        assert not page.locator(".activity").evaluate("(details) => details.open"), (
+            f"{name} auto-opened internal Activity after tool failure"
+        )
+        assert page.get_by_text("Activity · 1 failed", exact=True).is_visible()
+
         page.locator("#actions-button").click()
         assert page.get_by_text("Show OMP logs", exact=True).is_visible()
         page.keyboard.press("Escape")
@@ -204,6 +261,7 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
             "sessionName": "Verify OMP startup",
             "kind": "work",
             "parityRequired": True,
+            "trustedProjectPolicy": True,
         },
     )
     dispatch_frame(page, {"type": "transport", "status": "starting"})
@@ -320,7 +378,8 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
             "type": "bootstrap",
             "cwd": "C:\\generic",
             "kind": "work",
-            "parityRequired": False,
+            "parityRequired": True,
+            "trustedProjectPolicy": False,
         },
     )
     dispatch_frame(page, {"type": "parity", "ok": True})
@@ -332,6 +391,7 @@ def verify_view(page, name: str, *, empty: bool = False) -> Path:
             "cwd": "C:\\worktrees\\blocked-loop",
             "kind": "loop",
             "parityRequired": True,
+            "trustedProjectPolicy": True,
         },
     )
     dispatch_frame(
