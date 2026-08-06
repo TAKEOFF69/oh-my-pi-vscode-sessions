@@ -1,6 +1,7 @@
 .vscode/**
 .github/**
 node_modules/**
+node_modules.*
 !node_modules/@lydell/**
 !node_modules/@xterm/**
 src/**
