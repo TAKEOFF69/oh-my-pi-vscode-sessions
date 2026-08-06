@@ -352,6 +352,13 @@ document.addEventListener("click", (event) => {
     });
     return;
   }
+  const providerRetry = target.closest<HTMLButtonElement>(
+    "[data-retry-provider]",
+  );
+  if (providerRetry) {
+    retryProviderPrompt();
+    return;
+  }
   const toolToggle = target.closest<HTMLElement>("[data-tool-toggle]");
   if (toolToggle) {
     const details = document.querySelector<HTMLElement>(
@@ -538,7 +545,9 @@ function renderTimeline(): void {
   const empty =
     chatMessages.length === 0 &&
     totalActivityCount === 0 &&
-    visibleNotices.length === 0;
+    visibleNotices.length === 0 &&
+    !state.runtime.providerIssue &&
+    !state.runtime.responseWaiting;
   const nextSignature = empty
     ? `empty:${parityBanner}:${state.runtime.kind ?? ""}`
     : `content:${parityBanner}`;
@@ -558,7 +567,11 @@ function renderTimeline(): void {
   if (!empty) {
     updateTimelineSlot(
       "notices",
-      visibleNotices.length > 0 ? renderNotices(visibleNotices) : "",
+      `${state.runtime.responseWaiting ? renderResponseWaiting() : ""}${
+        state.runtime.providerIssue ? renderProviderIssue() : ""
+      }${
+        visibleNotices.length > 0 ? renderNotices(visibleNotices) : ""
+      }`,
     );
     updateMessageSlot(chatMessages);
     updateTimelineSlot(
@@ -817,6 +830,30 @@ function renderNotices(notices: typeof state.notices): string {
   `;
 }
 
+function renderProviderIssue(): string {
+  const issue = state.runtime.providerIssue;
+  if (!issue) return "";
+  const retryable = latestUserPrompt() !== undefined;
+  return `
+    <section class="provider-issue" role="status">
+      <strong>${escapeHtml(issue.title)}</strong>
+      <span>${escapeHtml(issue.detail)}</span>
+      <button class="button" type="button" data-retry-provider${
+        !retryable || state.runtime.isStreaming ? " disabled" : ""
+      }>Retry now</button>
+    </section>
+  `;
+}
+
+function renderResponseWaiting(): string {
+  return `
+    <div class="response-waiting" role="status">
+      <span class="streaming-caret" aria-hidden="true"></span>
+      <span>Still waiting for Opus 5…</span>
+    </div>
+  `;
+}
+
 function renderAgents(): string {
   return `
     <details class="agents">
@@ -896,6 +933,8 @@ function renderComposer(): void {
       ? "Starting OMP"
     : state.runtime.isCompacting
       ? "Compacting context"
+      : state.runtime.responseWaiting
+        ? "Still waiting for Opus 5…"
       : streaming
         ? "Working"
         : state.runtime.parity === "pending"
@@ -1083,6 +1122,46 @@ function submit(type: "prompt" | "steer" | "follow_up"): void {
   commandMenu.hidden = true;
   renderComposer();
   userPinnedScroll = false;
+}
+
+function retryProviderPrompt(): void {
+  if (state.runtime.isStreaming || !promptReady()) return;
+  const prompt = latestUserPrompt();
+  if (!prompt || !promptFrameFits(prompt.message, prompt.images)) return;
+  state = applyHostFrame(state, { type: "promptPending" });
+  post({
+    type: "prompt",
+    message: prompt.message,
+    images: prompt.images,
+  });
+  userPinnedScroll = false;
+  scheduleRender();
+}
+
+function latestUserPrompt(): { message: string; images: PromptImage[] } | undefined {
+  for (const item of [...state.messages].reverse()) {
+    if (item.role !== "user" || item.display === false) continue;
+    const message = item.content
+      .filter((block): block is Extract<UiContentBlock, { type: "text" }> =>
+        block.type === "text",
+      )
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+    const rawImages = item.content
+      .filter((block): block is Extract<UiContentBlock, { type: "image" }> =>
+        block.type === "image" && Boolean(block.data && block.mimeType),
+      )
+      .map((block) => ({
+        type: "image" as const,
+        data: block.data,
+        mimeType: block.mimeType,
+      }));
+    const images = parsePromptImages(rawImages);
+    if (!message || images === null) continue;
+    return { message, images };
+  }
+  return undefined;
 }
 
 function insertText(text: string): void {

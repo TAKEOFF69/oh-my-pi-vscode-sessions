@@ -277,6 +277,145 @@ test("user prompt waits for the single live advisor probe", async () => {
   }
 });
 
+test("Dzialki response-start deadline aborts hidden provider wait and preserves retry state", async () => {
+  const { RpcSessionHost } = await import("../src/rpc/RpcSessionHost");
+  const posts: Record<string, unknown>[] = [];
+  const statuses: string[] = [];
+  const host = new RpcSessionHost({
+    cwd: process.cwd(),
+    kind: "work",
+    executable: process.execPath,
+    args: [fixturePath, "--hang-turn"],
+    label: "Response deadline",
+    parity: {
+      name: "dzialki-work",
+      provider: "anthropic",
+      modelId: "claude-opus-5",
+      thinkingLevel: "xhigh",
+      cwd: process.cwd(),
+      requiredTools: fixtureTools,
+      allowedTools: fixtureTools,
+      forbiddenTools: [],
+    },
+    responseStartWaitMs: 20,
+    responseStartTimeoutMs: 40,
+    logger: { info() {}, error() {}, show() {}, dispose() {} },
+    onStatusChange: (status) => statuses.push(status),
+    onTitleChange: () => false,
+    onSessionFileChange() {},
+    onLoopHandoff() {},
+  });
+  host.attachWebview({
+    postMessage: async (message: Record<string, unknown>) => {
+      posts.push(message);
+      return true;
+    },
+  } as never, "response-deadline");
+  try {
+    await host.handleWebviewMessage({ type: "ready" });
+    await host.handleWebviewMessage({
+      type: "prompt",
+      message: "provider wait",
+      images: [],
+    });
+    await waitFor(() =>
+      posts.some((frame) => frame.type === "responseTimeout") &&
+      posts.some(
+        (frame) =>
+          frame.type === "rpc" &&
+          (frame.frame as Record<string, unknown> | undefined)?.type ===
+            "agent_end",
+      ),
+    );
+    assert.ok(posts.some((frame) => frame.type === "responseWaiting"));
+    assert.ok(
+      posts.some(
+        (frame) => frame.type === "responseTimeout" && frame.timeoutMs === 40,
+      ),
+    );
+    assert.ok(
+      posts.some(
+        (frame) =>
+          frame.type === "rpc" &&
+          (frame.frame as Record<string, unknown> | undefined)?.type ===
+            "agent_end",
+      ),
+    );
+  } finally {
+    await host.dispose();
+  }
+});
+
+test("Dzialki exact-model host cancels OMP outer overload retry", async () => {
+  const { RpcSessionHost } = await import("../src/rpc/RpcSessionHost");
+  const posts: Record<string, unknown>[] = [];
+  const statuses: string[] = [];
+  const host = new RpcSessionHost({
+    cwd: process.cwd(),
+    kind: "work",
+    executable: process.execPath,
+    args: [fixturePath, "--overload-retry"],
+    label: "Overload retry",
+    parity: {
+      name: "dzialki-work",
+      provider: "anthropic",
+      modelId: "claude-opus-5",
+      thinkingLevel: "xhigh",
+      cwd: process.cwd(),
+      requiredTools: fixtureTools,
+      allowedTools: fixtureTools,
+      forbiddenTools: [],
+    },
+    logger: { info() {}, error() {}, show() {}, dispose() {} },
+    onStatusChange: (status) => statuses.push(status),
+    onTitleChange: () => false,
+    onSessionFileChange() {},
+    onLoopHandoff() {},
+  });
+  host.attachWebview({
+    postMessage: async (message: Record<string, unknown>) => {
+      posts.push(message);
+      return true;
+    },
+  } as never, "overload-retry");
+  try {
+    await host.handleWebviewMessage({ type: "ready" });
+    await host.handleWebviewMessage({
+      type: "prompt",
+      message: "overloaded provider",
+      images: [],
+    });
+    await waitFor(() =>
+      posts.some(
+        (frame) =>
+          frame.type === "rpc" &&
+          (frame.frame as Record<string, unknown> | undefined)?.type ===
+            "agent_end",
+      ),
+    );
+    assert.ok(
+      posts.some(
+        (frame) =>
+          frame.type === "rpc" &&
+          (frame.frame as Record<string, unknown> | undefined)?.type ===
+            "auto_retry_start",
+      ),
+    );
+    assert.ok(
+      posts.some(
+        (frame) =>
+          frame.type === "rpc" &&
+          (frame.frame as Record<string, unknown> | undefined)?.type ===
+            "auto_retry_end" &&
+          (frame.frame as Record<string, unknown>).finalError ===
+            "Retry cancelled",
+      ),
+    );
+  } finally {
+    await host.dispose();
+  }
+});
+
 test("dispose and restart release an in-flight first-prompt reservation exactly once", async () => {
   const { RpcSessionHost } = await import("../src/rpc/RpcSessionHost");
   for (const action of ["dispose", "restart"] as const) {

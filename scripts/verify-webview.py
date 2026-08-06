@@ -692,6 +692,149 @@ def verify_untrusted_markdown(browser) -> None:
     page.close()
 
 
+def verify_provider_recovery(browser) -> tuple[Path, Path]:
+    page = browser.new_page(viewport={"width": 430, "height": 800})
+    page.goto(f"{HARNESS.as_uri()}?empty=1")
+    page.wait_for_load_state("networkidle")
+    page.evaluate(
+        """() => {
+          window.__OMP_TEST_POSTS__ = [];
+          window.addEventListener("omp-fixture-post", (event) => {
+            window.__OMP_TEST_POSTS__.push(event.detail);
+          });
+        }"""
+    )
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "response",
+                "command": "get_messages",
+                "success": True,
+                "data": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Explain my five recent commits",
+                                },
+                                {
+                                    "type": "image",
+                                    "mimeType": "image/png",
+                                    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+                                },
+                            ],
+                        }
+                    ]
+                },
+            },
+        },
+    )
+    dispatch_frame(page, {"type": "promptPending"})
+    dispatch_frame(page, {"type": "rpc", "frame": {"type": "agent_start"}})
+    dispatch_frame(page, {"type": "responseWaiting"})
+    assert page.locator(".response-waiting").is_visible()
+    dispatch_frame(page, {"type": "responseTimeout", "timeoutMs": 20_000})
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "isError": True,
+                    "errorMessage": "Request was aborted",
+                    "content": [],
+                },
+            },
+        },
+    )
+    dispatch_frame(
+        page,
+        {"type": "rpc", "frame": {"type": "agent_end", "isTerminal": True}},
+    )
+    page.get_by_text("Opus 5 did not start", exact=True).wait_for()
+    assert page.get_by_text("Request was aborted", exact=False).count() == 0
+    assert page.get_by_text("Retry 1/10", exact=False).count() == 0
+    screenshot = OUTPUT / "rpc-webview-provider-recovery.png"
+    page.screenshot(path=str(screenshot), full_page=True)
+    page.get_by_text("Retry now", exact=True).click()
+    assert {
+        "type": "prompt",
+        "message": "Explain my five recent commits",
+        "images": [
+            {
+                "type": "image",
+                "mimeType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+            }
+        ],
+    } in page.evaluate("() => window.__OMP_TEST_POSTS__")
+
+    dispatch_frame(page, {"type": "rpc", "frame": {"type": "agent_start"}})
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "isError": True,
+                    "errorMessage": "Anthropic stream error (overloaded_error): Overloaded",
+                    "content": [],
+                },
+            },
+        },
+    )
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "auto_retry_start",
+                "attempt": 1,
+                "maxAttempts": 10,
+                "errorMessage": "Anthropic stream error (overloaded_error): Overloaded",
+            },
+        },
+    )
+    dispatch_frame(
+        page,
+        {
+            "type": "rpc",
+            "frame": {
+                "type": "auto_retry_end",
+                "success": False,
+                "attempt": 1,
+                "finalError": "Retry cancelled",
+            },
+        },
+    )
+    dispatch_frame(
+        page,
+        {"type": "rpc", "frame": {"type": "agent_end", "isTerminal": True}},
+    )
+    page.get_by_text("Opus 5 is temporarily overloaded", exact=True).wait_for()
+    assert page.get_by_text("Retry failed", exact=False).count() == 0
+    assert page.get_by_text("Retry cancelled", exact=False).count() == 0
+    assert page.get_by_text("Retry 1/10", exact=False).count() == 0
+    overload_screenshot = OUTPUT / "rpc-webview-provider-overload.png"
+    page.screenshot(path=str(overload_screenshot), full_page=True)
+    page.get_by_text("Retry now", exact=True).click()
+    retry_posts = page.evaluate(
+        "() => window.__OMP_TEST_POSTS__.filter((post) => post.type === 'prompt')"
+    )
+    assert len(retry_posts) == 2
+    assert retry_posts[0] == retry_posts[1]
+    page.close()
+    return screenshot, overload_screenshot
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -722,6 +865,7 @@ def main() -> None:
             empty=True,
         )
         verify_untrusted_markdown(browser)
+        provider_recovery, provider_overload = verify_provider_recovery(browser)
         stream_average = verify_stream_performance(browser)
         sidebar_narrow, sidebar_narrow_ms = verify_sidebar(
             browser, 340, 980, "reference"
@@ -735,6 +879,8 @@ def main() -> None:
     print(f"narrow={narrow}")
     print(f"reference={reference}")
     print(f"stream_update_average_ms={stream_average:.1f}")
+    print(f"provider_recovery={provider_recovery}")
+    print(f"provider_overload={provider_overload}")
     print(f"sidebar_reference={sidebar_narrow} ({sidebar_narrow_ms:.1f}ms)")
     print(f"sidebar_wide={sidebar_wide} ({sidebar_wide_ms:.1f}ms)")
 

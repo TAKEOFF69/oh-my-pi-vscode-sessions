@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.2] - 2026-08-06
+
+### Added
+
+- Exact Dzialkopedia work sessions now show a quiet waiting signal after 12 seconds without model
+  output and stop the stalled turn after 20 seconds with one explicit `Retry now` action.
+
+### Fixed
+
+- Anthropic overload no longer leaves the sidebar inside OMP's nested minute-long automatic retry
+  sequence or dumps raw retry and abort transport messages into the conversation.
+- Retrying a stopped turn preserves its text and attached screenshots while keeping Opus 5 locked;
+  no fallback model or credential substitution is introduced.
+
 ## [2.6.1] - 2026-08-05
 
 ### Fixed

@@ -29,6 +29,12 @@ import {
 } from "./preParity";
 import { PromptLifecycle } from "./promptLifecycle";
 import { buildRpcPromptCommand } from "./promptCommand";
+import {
+  DZIALKI_RESPONSE_TIMEOUT_MS,
+  isProviderOverloadFrame,
+  ResponseStartWatchdog,
+  shouldWatchResponseStart,
+} from "./responseStartWatchdog";
 import { tagSurfaceMessage } from "../sidebar/surfaceRouting";
 import { TeardownBarrier } from "./teardownBarrier";
 import {
@@ -62,6 +68,8 @@ export type RpcSessionHostOptions = {
   onFirstPromptStarted?: () => void | Promise<void>;
   onFirstPromptRejected?: () => void | Promise<void>;
   env?: NodeJS.ProcessEnv;
+  responseStartWaitMs?: number;
+  responseStartTimeoutMs?: number;
 };
 
 export class RpcSessionHost implements SessionHost {
@@ -128,6 +136,9 @@ export class RpcSessionHost implements SessionHost {
   #advisorProbeTimer: NodeJS.Timeout | undefined;
   #rpcGeneration = 0;
   #advisorVerifiedAt: number | undefined;
+  readonly #responseStartWatchdog: ResponseStartWatchdog;
+  readonly #responseStartTimeoutMs: number;
+  #overloadAbortTimer: NodeJS.Timeout | undefined;
 
   constructor(options: RpcSessionHostOptions) {
     this.#cwd = options.cwd;
@@ -152,6 +163,18 @@ export class RpcSessionHost implements SessionHost {
     this.#onFirstPromptStarted = options.onFirstPromptStarted ?? (() => undefined);
     this.#onFirstPromptRejected = options.onFirstPromptRejected ?? (() => undefined);
     this.#env = options.env;
+    this.#responseStartTimeoutMs =
+      options.responseStartTimeoutMs ?? DZIALKI_RESPONSE_TIMEOUT_MS;
+    this.#responseStartWatchdog = new ResponseStartWatchdog({
+      waitMs: options.responseStartWaitMs,
+      timeoutMs: options.responseStartTimeoutMs,
+      onWaiting: () => {
+        void this.#post({ type: "responseWaiting" });
+      },
+      onTimeout: () => {
+        void this.#abortSlowResponseStart();
+      },
+    });
   }
 
   attachWebview(webview: vscode.Webview, surfaceToken: string): void {
@@ -228,6 +251,8 @@ export class RpcSessionHost implements SessionHost {
     this.#clearAdvisorProbeTimer();
     this.#advisorVerifiedAt = undefined;
     this.#clearTurnWatchdog();
+    this.#responseStartWatchdog.clear();
+    this.#clearOverloadAbortTimer();
     void this.#settleInitialPrompt(false);
     const rpc = this.#rpc;
     this.#rpc = undefined;
@@ -267,6 +292,8 @@ export class RpcSessionHost implements SessionHost {
     this.#parityFailed = false;
     this.#streaming = false;
     this.#clearTurnWatchdog();
+    this.#responseStartWatchdog.clear();
+    this.#clearOverloadAbortTimer();
     this.#historySnapshot = undefined;
     this.#commandsSnapshot = undefined;
     this.#activeTurnFrames = [];
@@ -658,6 +685,8 @@ export class RpcSessionHost implements SessionHost {
   #blockParity(detail: string): false {
     this.#clearAdvisorProbeTimer();
     this.#advisorVerifiedAt = undefined;
+    this.#responseStartWatchdog.clear();
+    this.#clearOverloadAbortTimer();
     this.#parityFailed = true;
     this.#parityPassed = false;
     this.#logger.error(`RPC parity blocked "${this.#label}": ${detail}`);
@@ -740,6 +769,8 @@ export class RpcSessionHost implements SessionHost {
       return;
     }
     if (!this.#validateRuntimeConfig(frame)) return;
+    this.#responseStartWatchdog.observe(frame);
+    this.#interceptProviderOverloadRetry(frame);
     this.#observeTurnWatchdog(frame);
     this.#observeRpcFrame(frame);
     this.#handleRpcFrame(frame);
@@ -758,6 +789,8 @@ export class RpcSessionHost implements SessionHost {
       // buffered and may omit the resulting state in OMP 17.1.3. The full
       // get_state snapshot was validated immediately before this flush.
       if (!this.#validateAmbientMcpMounts(frame)) return false;
+      this.#responseStartWatchdog.observe(frame);
+      this.#interceptProviderOverloadRetry(frame);
       this.#observeTurnWatchdog(frame);
       this.#observeRpcFrame(frame);
       this.#handleRpcFrame(frame);
@@ -957,17 +990,32 @@ export class RpcSessionHost implements SessionHost {
       return false;
     }
     this.#promptLifecycle.begin(id, message, images);
+    const wasStreaming = this.#streaming;
+    const watchResponseStart = shouldWatchResponseStart(
+      this.#parity?.name,
+      this.#kind,
+      type,
+      wasStreaming,
+    );
+    if (watchResponseStart) {
+      await this.#post({ type: "promptPending" });
+      this.#responseStartWatchdog.arm();
+    }
     const command = buildRpcPromptCommand(
       type,
       id,
       message,
       images,
-      this.#streaming,
+      wasStreaming,
     );
     try {
-      await rpc.request(command);
+      const response = await rpc.request(command);
+      if (isRecord(response.data) && response.data.agentInvoked === false) {
+        this.#responseStartWatchdog.clear();
+      }
       const accepted = await this.#markFirstPromptAccepted();
       if (!accepted) {
+        if (watchResponseStart) this.#responseStartWatchdog.clear();
         const draft = this.#promptLifecycle.fail(id);
         if (draft !== undefined) {
           await this.#post({
@@ -979,6 +1027,7 @@ export class RpcSessionHost implements SessionHost {
       }
       return accepted;
     } catch (error) {
+      if (watchResponseStart) this.#responseStartWatchdog.clear();
       if (reservedByThisPrompt && !this.#firstPromptAccepted) {
         await this.#releaseFirstPromptReservation();
       }
@@ -998,6 +1047,75 @@ export class RpcSessionHost implements SessionHost {
       await vscode.window.showErrorMessage(`OMP Sessions: ${failure}`);
       return false;
     }
+  }
+
+  async #abortSlowResponseStart(): Promise<void> {
+    const rpc = this.#rpc;
+    if (
+      this.#disposed ||
+      !rpc?.running ||
+      !this.#parityPassed ||
+      this.#kind !== "work" ||
+      this.#parity?.name !== "dzialki-work"
+    ) {
+      return;
+    }
+    await this.#post({
+      type: "responseTimeout",
+      timeoutMs: this.#responseStartTimeoutMs,
+    });
+    this.#logger.info(
+      `Aborting response-start timeout for "${this.#label}" after ${this.#responseStartTimeoutMs} ms`,
+    );
+    try {
+      await rpc.request({ type: "abort" }, 10_000);
+    } catch (error) {
+      this.#logger.error(
+        `Could not abort response-start timeout for "${this.#label}"`,
+        error,
+      );
+    }
+  }
+
+  #interceptProviderOverloadRetry(frame: RpcFrame): void {
+    if (
+      this.#parity?.name !== "dzialki-work" ||
+      !this.#parityPassed ||
+      frame.type !== "auto_retry_start" ||
+      !isProviderOverloadFrame(frame)
+    ) {
+      return;
+    }
+    this.#clearOverloadAbortTimer();
+    const rpc = this.#rpc;
+    const generation = this.#rpcGeneration;
+    if (!rpc?.running) return;
+    // OMP emits auto_retry_start just before installing its retry abort
+    // controller. Delay one tick without reaching the first 500 ms backoff.
+    this.#overloadAbortTimer = setTimeout(() => {
+      this.#overloadAbortTimer = undefined;
+      if (
+        this.#disposed ||
+        this.#rpc !== rpc ||
+        generation !== this.#rpcGeneration ||
+        !rpc.running
+      ) {
+        return;
+      }
+      void rpc.request({ type: "abort_retry" }, 5_000).catch((error) => {
+        this.#logger.error(
+          `Could not stop outer overload retry for "${this.#label}"`,
+          error,
+        );
+      });
+    }, 150);
+    this.#overloadAbortTimer.unref?.();
+  }
+
+  #clearOverloadAbortTimer(): void {
+    if (!this.#overloadAbortTimer) return;
+    clearTimeout(this.#overloadAbortTimer);
+    this.#overloadAbortTimer = undefined;
   }
 
   async #verifyAdvisorRuntime(

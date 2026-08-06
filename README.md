@@ -36,7 +36,7 @@ Generic OMP sessions do not require Dzialkopedia or another private repository. 
 RPC transport, single-sidebar presentation, session lifecycle, process reaping, writer leases, and
 editor context. Unverified generic sessions are labelled `Custom access`.
 
-Version 2.6.1 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
+Version 2.6.2 also contains one built-in Dzialkopedia policy. It activates only for exact canonical
 Git origin and is fail-closed. Adapter source exposes repository identity, control-file names, and
 protocol identifiers, but contains no credentials. This is currently runtime separation, not yet
 separate packaging; see [project-policy boundary](docs/project-policy-boundary.md).
@@ -70,6 +70,14 @@ as advisor, with model fallback disabled. Launch parity is durable: a later OMP 
 change fails the session closed instead of silently drifting. Dzialkopedia verifies that Sol is
 actually running before first prompt and again after completed turns. OMP OAuth credentials remain
 in OMP's own auth storage.
+
+Anthropic overload remains explicit. If an exact Dzialkopedia work turn produces no semantic model
+output, sidebar shows a quiet waiting state at 12 seconds, stops that turn at the measured 20-second
+product SLA, and offers
+one `Retry now` action that preserves prompt and screenshots. It never silently swaps Opus, advisor,
+account, or effort. This bounds the extension-visible wait while upstream OMP still owns its internal
+provider retry policy. Unusually cold or very large contexts can raise the advanced workspace setting
+`ohMyPiSessions.dzialkiResponseStartTimeoutMs` up to OMP's 100-second first-event ceiling.
 
 For Dzialkopedia, standard session exposes narrow `loop_handoff` tool but never
 direct Loop lifecycle or dispatch tools. Once user and Opus decide Loop is right,

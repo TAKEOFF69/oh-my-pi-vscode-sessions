@@ -7,7 +7,10 @@ const spawnDescendant = process.argv.includes("--spawn-descendant");
 const approvalRequest = process.argv.includes("--approval-request");
 const slowAdvisor = process.argv.includes("--slow-advisor");
 const hangPrompt = process.argv.includes("--hang-prompt");
+const hangTurn = process.argv.includes("--hang-turn");
+const overloadRetry = process.argv.includes("--overload-retry");
 let advisorPending = false;
+let turnPending = false;
 
 const write = (frame) => {
   process.stdout.write(`${JSON.stringify(frame)}\n`);
@@ -112,6 +115,34 @@ input.on("line", (line) => {
       return;
     }
     if (hangPrompt) return;
+    if (hangTurn) {
+      turnPending = true;
+      write({ type: "agent_start" });
+      respond(command, { agentInvoked: true });
+      return;
+    }
+    if (overloadRetry) {
+      turnPending = true;
+      write({ type: "agent_start" });
+      write({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          isError: true,
+          errorMessage: "Anthropic stream error (overloaded_error): Overloaded",
+          content: [],
+        },
+      });
+      write({
+        type: "auto_retry_start",
+        attempt: 1,
+        maxAttempts: 10,
+        delayMs: 500,
+        errorMessage: "Anthropic stream error (overloaded_error): Overloaded",
+      });
+      respond(command, { agentInvoked: true });
+      return;
+    }
     write({
       type: "agent_start",
     });
@@ -186,6 +217,33 @@ input.on("line", (line) => {
       id: command.id,
       confirmed: command.confirmed,
     });
+    return;
+  }
+  if (command.type === "abort" && hangTurn && turnPending) {
+    turnPending = false;
+    write({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        isError: true,
+        errorMessage: "Request was aborted",
+        content: [],
+      },
+    });
+    write({ type: "agent_end", isTerminal: true });
+    respond(command, { aborted: true });
+    return;
+  }
+  if (command.type === "abort_retry" && overloadRetry && turnPending) {
+    turnPending = false;
+    write({
+      type: "auto_retry_end",
+      success: false,
+      attempt: 1,
+      finalError: "Retry cancelled",
+    });
+    write({ type: "agent_end", isTerminal: true });
+    respond(command, { aborted: true });
     return;
   }
   if (command.type === "shutdown") {
