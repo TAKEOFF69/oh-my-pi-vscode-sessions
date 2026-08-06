@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.3] - 2026-08-06
+
+### Fixed
+
+- A session that died, failed startup, or lost runtime parity while the sidebar was waiting for the
+  first Opus 5 output left `Still waiting for Opus 5` on screen forever, beside the error that
+  explained the session was already gone. The waiting state is now retired by any non-ready
+  transport, by blocked parity, and by the response-start deadline itself when the session is no
+  longer abortable.
+
 ## [2.6.2] - 2026-08-06
 
 ### Added

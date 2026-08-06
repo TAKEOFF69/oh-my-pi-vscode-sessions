@@ -505,3 +505,53 @@ test("user quoting xdev notice text remains visible", () => {
   assert.equal(state.messages[0]?.display, undefined);
   assert.equal(selectChatMessages(state.messages).length, 2);
 });
+
+function waitingState() {
+  let state = createInitialWebviewState();
+  state = applyHostFrame(state, { type: "promptPending" });
+  state = applyHostFrame(state, { type: "responseWaiting" });
+  assert.equal(state.runtime.responseWaiting, true);
+  return state;
+}
+
+test("a failed transport retires the response-start waiting state", () => {
+  let state = waitingState();
+  state = applyHostFrame(state, {
+    type: "transport",
+    status: "failed",
+    detail: "OMP exited with code 1",
+  });
+  assert.equal(state.runtime.responseWaiting, false);
+  assert.equal(state.runtime.transport, "failed");
+  assert.equal(state.notices.at(-1)?.level, "error");
+});
+
+test("an exited transport retires the response-start waiting state", () => {
+  let state = waitingState();
+  state = applyHostFrame(state, { type: "transport", status: "exited" });
+  assert.equal(state.runtime.responseWaiting, false);
+});
+
+test("a ready transport leaves the response-start waiting state alone", () => {
+  let state = waitingState();
+  state = applyHostFrame(state, { type: "transport", status: "ready" });
+  assert.equal(state.runtime.responseWaiting, true);
+});
+
+test("blocked parity retires the response-start waiting state", () => {
+  let state = waitingState();
+  state = applyHostFrame(state, {
+    type: "parity",
+    ok: false,
+    detail: "Advisor is not Sol/xhigh",
+  });
+  assert.equal(state.runtime.responseWaiting, false);
+  assert.equal(state.runtime.parity, "failed");
+});
+
+test("responseIdle retires the waiting state without inventing an issue", () => {
+  let state = waitingState();
+  state = applyHostFrame(state, { type: "responseIdle" });
+  assert.equal(state.runtime.responseWaiting, false);
+  assert.equal(state.runtime.providerIssue, undefined);
+});
