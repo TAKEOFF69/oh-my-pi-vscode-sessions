@@ -8,6 +8,7 @@ const approvalRequest = process.argv.includes("--approval-request");
 const slowAdvisor = process.argv.includes("--slow-advisor");
 const hangPrompt = process.argv.includes("--hang-prompt");
 const hangTurn = process.argv.includes("--hang-turn");
+const dieAfterPrompt = process.argv.includes("--die-after-prompt");
 const overloadRetry = process.argv.includes("--overload-retry");
 let advisorPending = false;
 let turnPending = false;
@@ -115,6 +116,13 @@ input.on("line", (line) => {
       return;
     }
     if (hangPrompt) return;
+    if (dieAfterPrompt) {
+      // Accept the turn, then die without ever emitting a semantic frame:
+      // the real shape of OMP crashing while the host waits for first output.
+      respond(command, { agentInvoked: true });
+      setTimeout(() => process.exit(1), 10);
+      return;
+    }
     if (hangTurn) {
       turnPending = true;
       write({ type: "agent_start" });

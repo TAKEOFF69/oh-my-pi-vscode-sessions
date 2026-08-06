@@ -87,14 +87,14 @@ export class ResponseStartWatchdog {
 export function shouldWatchResponseStart(
   parityName: string | undefined,
   kind: string,
-  promptType: "prompt" | "steer" | "follow_up",
+  _promptType: "prompt" | "steer" | "follow_up",
   alreadyStreaming: boolean,
 ): boolean {
+  // `alreadyStreaming`, not the prompt type, is what decides this. A steer or
+  // follow-up sent while the session is idle waits for first output exactly
+  // like a fresh prompt, and used to hang with no SLA and no retry card.
   return (
-    parityName === "dzialki-work" &&
-    kind === "work" &&
-    promptType === "prompt" &&
-    !alreadyStreaming
+    parityName === "dzialki-work" && kind === "work" && !alreadyStreaming
   );
 }
 

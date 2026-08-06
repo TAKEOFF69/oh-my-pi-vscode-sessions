@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.3] - 2026-08-06
+
+### Fixed
+
+- A session that died, failed startup, or lost runtime parity while the sidebar was waiting for the
+  first Opus 5 output left `Still waiting for Opus 5` on screen forever, beside the error that
+  explained the session was already gone. The waiting state is now retired by any non-ready
+  transport, by blocked parity, and by the response-start deadline itself when the session is no
+  longer abortable.
+- A steer or follow-up sent while the session was idle got no waiting notice, no deadline, and no
+  retry card, so it could sit on a hidden provider retry batch indefinitely. The first-output SLA
+  now follows whether the session is already streaming, not which button sent the turn.
+- The composer status said `Session blocked` for both a deliberate runtime parity lock and a dead
+  transport, so an intentional lock read as a session that died on its own. It now distinguishes
+  `Runtime changed` from `OMP session ended`.
+
 ## [2.6.2] - 2026-08-06
 
 ### Added

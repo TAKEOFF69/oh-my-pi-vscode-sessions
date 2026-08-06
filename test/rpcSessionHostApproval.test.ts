@@ -519,6 +519,90 @@ test("dispose waits for an acknowledged first prompt to become durable", async (
   assert.equal(rejected, 0, "acknowledged prompt must never return to unused");
 });
 
+test("an OMP crash while awaiting first output never strands the waiting state", async () => {
+  const [{ RpcSessionHost }, { applyHostFrame, createInitialWebviewState }] =
+    await Promise.all([
+      import("../src/rpc/RpcSessionHost"),
+      import("../src/rpc/webviewState"),
+    ]);
+  const posts: Record<string, unknown>[] = [];
+  const host = new RpcSessionHost({
+    cwd: process.cwd(),
+    kind: "work",
+    executable: process.execPath,
+    args: [fixturePath, "--die-after-prompt"],
+    label: "Crash while waiting",
+    parity: {
+      name: "dzialki-work",
+      provider: "anthropic",
+      modelId: "claude-opus-5",
+      thinkingLevel: "xhigh",
+      cwd: process.cwd(),
+      requiredTools: fixtureTools,
+      allowedTools: fixtureTools,
+      forbiddenTools: [],
+    },
+    responseStartWaitMs: 30,
+    responseStartTimeoutMs: 150,
+    logger: { info() {}, error() {}, show() {}, dispose() {} },
+    onStatusChange() {},
+    onTitleChange: () => false,
+    onSessionFileChange() {},
+    onLoopHandoff() {},
+  });
+  host.attachWebview(
+    {
+      postMessage: async (message: Record<string, unknown>) => {
+        posts.push(message);
+        return true;
+      },
+    } as never,
+    "crash-while-waiting",
+  );
+
+  try {
+    await host.handleWebviewMessage({ type: "ready" });
+    await host.handleWebviewMessage({
+      type: "prompt",
+      message: "ask something the agent never answers",
+      images: [],
+    });
+    await waitFor(() =>
+      posts.some((frame) => frame.type === "responseWaiting"),
+    );
+    await waitFor(() =>
+      posts.some(
+        (frame) =>
+          frame.type === "transport" &&
+          (frame.status === "failed" || frame.status === "exited"),
+      ),
+    );
+    // Let the response-start deadline pass with the process already gone.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    // Replay exactly what the host told the webview. Whatever retires the
+    // spinner, the sidebar must not be left waiting on a dead session.
+    let state = createInitialWebviewState();
+    let sawWaiting = false;
+    for (const frame of posts) {
+      state = applyHostFrame(state, frame);
+      if (state.runtime.responseWaiting) sawWaiting = true;
+    }
+    assert.equal(sawWaiting, true, "test is void unless the spinner appeared");
+    assert.equal(
+      state.runtime.responseWaiting,
+      false,
+      "a dead OMP session must not leave 'Still waiting for Opus 5' on screen",
+    );
+    assert.ok(
+      state.notices.some((notice) => notice.level === "error"),
+      "the crash must still surface an error notice",
+    );
+  } finally {
+    await host.dispose();
+  }
+});
+
 async function waitFor(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (!predicate()) {

@@ -437,6 +437,9 @@ export function applyHostFrame(
         next.runtime.responseWaiting = true;
       }
       return next;
+    case "responseIdle":
+      next.runtime.responseWaiting = false;
+      return next;
     case "responseTimeout": {
       const timeoutMs = numberValue(raw.timeoutMs);
       next.runtime.responseWaiting = false;
@@ -447,8 +450,15 @@ export function applyHostFrame(
       };
       return next;
     }
-    case "transport":
-      next.runtime.transport = normalizeTransport(raw.status);
+    case "transport": {
+      const transport = normalizeTransport(raw.status);
+      next.runtime.transport = transport;
+      if (transport !== "ready") {
+        // A dead or restarting transport can never deliver the frame the
+        // response-start watchdog waits for. Keeping the waiting flag would
+        // strand "Still waiting for Opus 5" beside the transport error.
+        next.runtime.responseWaiting = false;
+      }
       if (raw.detail) {
         addNotice(
           next,
@@ -458,6 +468,7 @@ export function applyHostFrame(
         );
       }
       return next;
+    }
     case "parity":
       {
       const previousDetail = next.runtime.parityDetail;
@@ -471,6 +482,9 @@ export function applyHostFrame(
           ? previousDetail
           : incomingDetail;
       if (raw.ok !== true) {
+        // Blocked parity stops the turn host-side; the armed watchdog is
+        // cleared without an abort, so nothing else would retire the spinner.
+        next.runtime.responseWaiting = false;
         next.notices = next.notices.filter(
           (notice) => notice.title !== "Runtime parity blocked",
         );

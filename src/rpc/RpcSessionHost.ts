@@ -1058,6 +1058,10 @@ export class RpcSessionHost implements SessionHost {
       this.#kind !== "work" ||
       this.#parity?.name !== "dzialki-work"
     ) {
+      // Session died, lost parity, or changed identity while the watchdog was
+      // armed. No abort is possible and no further frame will arrive, so the
+      // waiting state must be retired here or the sidebar waits forever.
+      if (!this.#disposed) await this.#post({ type: "responseIdle" });
       return;
     }
     await this.#post({
