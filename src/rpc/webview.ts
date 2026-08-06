@@ -925,8 +925,13 @@ function renderComposer(): void {
   abortButton.hidden = !streaming;
   steerButton.disabled = preparingImage || !ready || !composer.value.trim();
   followButton.disabled = preparingImage || !ready || !composer.value.trim();
-  requireElement("composer-status").textContent = blocked
-    ? "Session blocked"
+  requireElement("composer-status").textContent =
+    // "Session blocked" named no cause, so a deliberate parity lock read as a
+    // session that died on its own. Say which of the two actually happened.
+    state.runtime.parity === "failed"
+      ? "Runtime changed"
+    : blocked
+      ? "OMP session ended"
     : preparingImage
       ? "Preparing screenshot"
     : state.runtime.transport === "starting"

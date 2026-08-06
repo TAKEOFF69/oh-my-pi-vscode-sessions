@@ -118,6 +118,12 @@ test("watchdog and overload interception are limited to exact Dzialki work sessi
   assert.equal(shouldWatchResponseStart("dzialki-loop", "loop", "prompt", false), false);
   assert.equal(shouldWatchResponseStart("dzialki-work", "work", "follow_up", true), false);
   assert.equal(shouldWatchResponseStart("generic", "work", "prompt", false), false);
+  // An idle session waits for first output the same way whatever the send
+  // button said; only an already-streaming turn is outside this SLA.
+  assert.equal(shouldWatchResponseStart("dzialki-work", "work", "follow_up", false), true);
+  assert.equal(shouldWatchResponseStart("dzialki-work", "work", "steer", false), true);
+  assert.equal(shouldWatchResponseStart("dzialki-work", "work", "steer", true), false);
+  assert.equal(shouldWatchResponseStart("dzialki-loop", "loop", "follow_up", false), false);
 
   assert.equal(
     isProviderOverloadFrame({
