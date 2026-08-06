@@ -2,7 +2,7 @@
   "name": "oh-my-pi-vscode-sessions",
   "displayName": "Oh My Pi Sessions",
   "description": "Run concurrent Oh My Pi RPC chats in one Codex-style VS Code sidebar, with isolated Git worktrees behind each writing session.",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "publisher": "takeoff69",
   "icon": "oh-my-pi-vscode-logo.png",
   "license": "MIT",
@@ -217,6 +217,14 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Fallback session directory when no workspace is open."
+        },
+        "ohMyPiSessions.dzialkiResponseStartTimeoutMs": {
+          "type": "number",
+          "default": 20000,
+          "minimum": 15000,
+          "maximum": 100000,
+          "scope": "resource",
+          "markdownDescription": "Advanced: maximum wait for first semantic Opus output in an exact Dzialkopedia work session. Default 20 seconds is the measured product SLA; raise it for unusually cold or very large contexts. Does not change model, account, or effort."
         }
       }
     },

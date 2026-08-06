@@ -95,6 +95,9 @@ export class SessionPanel implements vscode.Disposable {
 
     if (spec.transport === "rpc") {
       this.panel = undefined;
+      const responseStartTimeoutMs = vscode.workspace
+        .getConfiguration("ohMyPiSessions", vscode.Uri.file(spec.cwd))
+        .get<number>("dzialkiResponseStartTimeoutMs", 20_000);
       this.#rpcHost = new RpcSessionHost({
         cwd: spec.cwd,
         branch: spec.branch,
@@ -134,6 +137,7 @@ export class SessionPanel implements vscode.Disposable {
         onFirstPromptStarted: spec.onFirstPromptStarted,
         onFirstPromptRejected: spec.onFirstPromptRejected,
         env: spec.env,
+        responseStartTimeoutMs,
       });
       this.#host = this.#rpcHost;
       return;

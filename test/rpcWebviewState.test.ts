@@ -254,6 +254,75 @@ test("webview reducer exposes retries, compaction, and parity failure", () => {
   assert.equal(state.runtime.parityDetail, originalDetail);
 });
 
+test("provider overload becomes one retryable state instead of raw retry dump", () => {
+  let state = createInitialWebviewState({
+    transport: "ready",
+    parity: "passed",
+    isStreaming: true,
+  });
+  state = applyHostFrame(state, { type: "promptPending" });
+  state = applyHostFrame(state, { type: "responseWaiting" });
+  assert.equal(state.runtime.responseWaiting, true);
+
+  state = reduceRpcFrame(state, {
+    type: "message_end",
+    message: {
+      role: "assistant",
+      isError: true,
+      errorMessage: "Anthropic stream error (overloaded_error): Overloaded",
+      content: [],
+    },
+  });
+  state = reduceRpcFrame(state, {
+    type: "auto_retry_start",
+    attempt: 1,
+    maxAttempts: 10,
+    errorMessage: "Anthropic stream error (overloaded_error): Overloaded",
+  });
+  state = reduceRpcFrame(state, {
+    type: "auto_retry_end",
+    success: false,
+    attempt: 1,
+    finalError: "Retry cancelled",
+  });
+
+  assert.equal(state.runtime.providerIssue?.kind, "overloaded");
+  assert.equal(state.runtime.responseWaiting, false);
+  assert.equal(state.notices.some((notice) => /Retry 1\/10/.test(notice.title)), false);
+  assert.equal(state.notices.some((notice) => /Retry (?:failed|cancelled)/i.test(notice.title)), false);
+  assert.equal(selectChatMessages(state.messages).length, 0);
+});
+
+test("response timeout hides abort plumbing and clears on successful retry", () => {
+  let state = createInitialWebviewState({
+    transport: "ready",
+    parity: "passed",
+    isStreaming: true,
+  });
+  state = applyHostFrame(state, { type: "responseTimeout", timeoutMs: 20_000 });
+  state = reduceRpcFrame(state, {
+    type: "message_end",
+    message: {
+      role: "assistant",
+      isError: true,
+      errorMessage: "Request was aborted",
+      content: [],
+    },
+  });
+  assert.equal(state.runtime.providerIssue?.kind, "response-timeout");
+  assert.equal(selectChatMessages(state.messages).length, 0);
+
+  state = applyHostFrame(state, { type: "promptPending" });
+  state = reduceRpcFrame(state, {
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "Recovered" }],
+    },
+  });
+  assert.equal(state.runtime.providerIssue, undefined);
+});
+
 test("nonterminal agent_end keeps continuation streaming", () => {
   let state = createInitialWebviewState({ isStreaming: true });
   state = reduceRpcFrame(state, {

@@ -60,6 +60,12 @@ export type UiRequest = {
   timeout?: number;
 };
 
+export type UiProviderIssue = {
+  kind: "overloaded" | "response-timeout";
+  title: string;
+  detail: string;
+};
+
 export type UiRuntimeState = {
   model?: { provider?: string; id?: string };
   thinkingLevel?: string;
@@ -85,6 +91,8 @@ export type UiRuntimeState = {
   branch?: string;
   kind?: string;
   advisorLabel?: string;
+  responseWaiting?: boolean;
+  providerIssue?: UiProviderIssue;
 };
 
 export type RpcWebviewState = {
@@ -237,6 +245,7 @@ export function reduceRpcFrame(
     case "agent_end":
       if (frame.isTerminal !== false) {
         next.runtime.isStreaming = false;
+        next.runtime.responseWaiting = false;
       }
       return next;
     case "turn_start":
@@ -290,6 +299,11 @@ export function reduceRpcFrame(
       );
       return next;
     case "auto_retry_start":
+      if (isProviderOverloadText(stringValue(frame.errorMessage))) {
+        next.runtime.responseWaiting = false;
+        next.runtime.providerIssue = overloadIssue();
+        return next;
+      }
       addNotice(
         next,
         "warning",
@@ -298,6 +312,22 @@ export function reduceRpcFrame(
       );
       return next;
     case "auto_retry_end":
+      if (frame.success === true) {
+        next.runtime.providerIssue = undefined;
+      } else if (
+        next.runtime.providerIssue?.kind === "overloaded" &&
+        /retry cancelled/i.test(stringValue(frame.finalError))
+      ) {
+        // Expected transport acknowledgement after host abort_retry. The
+        // provider card already owns recovery UX; do not add a second red
+        // "Retry failed" notice for deliberate cancellation plumbing.
+        next.runtime.responseWaiting = false;
+        return next;
+      } else if (isProviderOverloadText(stringValue(frame.finalError))) {
+        next.runtime.responseWaiting = false;
+        next.runtime.providerIssue = overloadIssue();
+        return next;
+      }
       addNotice(
         next,
         frame.success === true ? "success" : "error",
@@ -398,6 +428,25 @@ export function applyHostFrame(
       next.runtime.parity =
         raw.parityRequired === false ? "not-required" : "pending";
       return next;
+    case "promptPending":
+      next.runtime.responseWaiting = false;
+      next.runtime.providerIssue = undefined;
+      return next;
+    case "responseWaiting":
+      if (!next.runtime.providerIssue) {
+        next.runtime.responseWaiting = true;
+      }
+      return next;
+    case "responseTimeout": {
+      const timeoutMs = numberValue(raw.timeoutMs);
+      next.runtime.responseWaiting = false;
+      next.runtime.providerIssue = {
+        kind: "response-timeout",
+        title: "Opus 5 did not start",
+        detail: `Stopped after ${Math.round(timeoutMs / 1000) || 20} seconds without model output. Your prompt is safe to retry.`,
+      };
+      return next;
+    }
     case "transport":
       next.runtime.transport = normalizeTransport(raw.status);
       if (raw.detail) {
@@ -510,6 +559,11 @@ function reduceResponse(
           normalizeMessage(message, `history-${index}`, false),
         )
       : [];
+    state.runtime.providerIssue = undefined;
+    state.runtime.responseWaiting = false;
+    for (const message of state.messages) {
+      observeMessageState(state, message);
+    }
     state.liveMessageKey = undefined;
     return state;
   }
@@ -569,15 +623,17 @@ function reduceMessage(
   if (!isRecord(value)) {
     return state;
   }
+  let normalized: UiMessage;
   if (phase === "start" || !state.liveMessageKey) {
     const key = `live-${++state.sequence}`;
     state.liveMessageKey = key;
-    state.messages.push(normalizeMessage(value, key, phase !== "end"));
+    normalized = normalizeMessage(value, key, phase !== "end");
+    state.messages.push(normalized);
   } else {
     const index = state.messages.findIndex(
       (message) => message.key === state.liveMessageKey,
     );
-    const normalized = normalizeMessage(
+    normalized = normalizeMessage(
       value,
       state.liveMessageKey,
       phase !== "end",
@@ -588,6 +644,7 @@ function reduceMessage(
       state.messages.push(normalized);
     }
   }
+  observeMessageState(state, normalized);
   if (phase === "end") {
     state.liveMessageKey = undefined;
   }
@@ -605,6 +662,16 @@ function normalizeMessage(
   const rawContent = message.content;
   const role = normalizeRole(rawRole, customType, rawContent);
   const content = normalizeContent(rawContent);
+  const errorMessage = stringValue(message.errorMessage).trim();
+  if (
+    message.isError === true &&
+    errorMessage &&
+    !content.some(
+      (block) => block.type === "text" && block.text.trim().length > 0,
+    )
+  ) {
+    content.push({ type: "text", text: errorMessage });
+  }
   const hiddenRuntimeMessage = isHiddenRuntimeMessage(
     rawRole,
     customType,
@@ -714,6 +781,50 @@ function normalizeContent(value: unknown): UiContentBlock[] {
   });
 }
 
+function observeMessageState(
+  state: RpcWebviewState,
+  message: UiMessage,
+): void {
+  if (message.role !== "assistant") return;
+  const text = message.content
+    .filter((block): block is Extract<UiContentBlock, { type: "text" }> =>
+      block.type === "text",
+    )
+    .map((block) => block.text)
+    .join("\n");
+  const semantic = message.content.some((block) => {
+    if (block.type === "image" || block.type === "toolCall") return true;
+    if (block.type === "text") return block.text.trim().length > 0;
+    if (block.type === "thinking") return block.thinking.trim().length > 0;
+    return false;
+  });
+  if (semantic) state.runtime.responseWaiting = false;
+  if (message.isError && isProviderOverloadText(text)) {
+    message.display = false;
+    state.runtime.providerIssue = overloadIssue();
+    return;
+  }
+  if (message.isError && /request was aborted/i.test(text)) {
+    message.display = false;
+    return;
+  }
+  if (!message.isError && semantic && state.runtime.providerIssue) {
+    state.runtime.providerIssue = undefined;
+  }
+}
+
+function overloadIssue(): UiProviderIssue {
+  return {
+    kind: "overloaded",
+    title: "Opus 5 is temporarily overloaded",
+    detail: "Anthropic returned no output. Your prompt is safe to retry.",
+  };
+}
+
+function isProviderOverloadText(value: string): boolean {
+  return /(?:overloaded_error|\boverloaded\b)/i.test(value);
+}
+
 function upsertTool(
   state: RpcWebviewState,
   frame: Record<string, unknown>,
@@ -723,6 +834,7 @@ function upsertTool(
   if (!id) {
     return state;
   }
+  state.runtime.responseWaiting = false;
   const existing = state.tools.find((tool) => tool.id === id);
   const update: UiToolRun = {
     id,
@@ -944,6 +1056,9 @@ function cloneState(state: RpcWebviewState): RpcWebviewState {
         : undefined,
       contextUsage: state.runtime.contextUsage
         ? { ...state.runtime.contextUsage }
+        : undefined,
+      providerIssue: state.runtime.providerIssue
+        ? { ...state.runtime.providerIssue }
         : undefined,
       todoPhases: [...state.runtime.todoPhases],
       tools: [...state.runtime.tools],
